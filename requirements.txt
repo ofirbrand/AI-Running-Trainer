@@ -1,0 +1,26 @@
+# Backend runtime dependencies for the AI Running Coach.
+# Pinned to lower bounds that are known-compatible; pip will install the
+# latest matching release. Run inside a virtualenv (see README).
+
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlalchemy>=2.0
+pydantic[email]>=2.7
+pydantic-settings>=2.3
+email-validator>=2.1
+python-multipart>=0.0.9
+bcrypt>=4.1
+pyjwt>=2.8
+APScheduler>=3.10
+
+# Garmin integration (unofficial API wrapper)
+garminconnect>=0.2
+curl_cffi>=0.7
+
+# Claude Agent SDK (requires Python 3.10+ and Node.js available on PATH)
+claude-agent-sdk>=0.1
+
+# Testing
+pytest>=8.2
+pytest-asyncio>=0.23
+httpx>=0.27
