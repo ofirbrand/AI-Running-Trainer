@@ -40,7 +40,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
           {user && (
             <nav className="flex items-center gap-1">
-              <NavItem to="/">Dashboard</NavItem>
+              <NavItem to="/">Plans</NavItem>
               <NavItem to="/garmin">
                 <span className="flex items-center gap-1.5">
                   <Watch className="h-4 w-4" /> My Garmin

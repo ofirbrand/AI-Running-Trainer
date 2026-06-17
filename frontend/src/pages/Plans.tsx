@@ -44,7 +44,7 @@ function PlanCard({ plan }: { plan: PlanSummary }) {
   );
 }
 
-export function DashboardPage() {
+export function Plans() {
   const navigate = useNavigate();
   const { data: plans, isLoading } = useQuery({ queryKey: ["plans"], queryFn: plansApi.list });
   const { data: garmin } = useQuery({ queryKey: ["garmin-status"], queryFn: garminApi.status });
@@ -53,7 +53,7 @@ export function DashboardPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Your training plans</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Plans</h1>
           <p className="text-sm text-slate-500">Build, track, and refine your running plans.</p>
         </div>
         <button className="btn-primary" onClick={() => navigate("/plans/new")}>

@@ -6,7 +6,7 @@ import { PageLoader } from "./components/ui";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { OnboardingGarminPage } from "./pages/OnboardingGarminPage";
-import { DashboardPage } from "./pages/DashboardPage";
+import { Plans } from "./pages/Plans";
 import { MyGarminPage } from "./pages/MyGarminPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { CreatePlanPage } from "./pages/CreatePlanPage";
@@ -59,7 +59,7 @@ export default function App() {
         path="/"
         element={
           <Protected>
-            <DashboardPage />
+            <Plans />
           </Protected>
         }
       />
