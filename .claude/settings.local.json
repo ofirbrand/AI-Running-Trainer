@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git clone *)",
+      "Bash(mkdir -p ~/.ssh)",
+      "Bash(ssh-keyscan -t ed25519,rsa github.com)",
+      "Bash(echo \"keyscan exit: $?\")",
+      "Read(//tmp/**)",
+      "Bash(echo \"clone exit: $?\")",
+      "Bash(ssh -T git@github.com)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(npm --version)",
+      "Bash(echo \"npm: $\\(npm --version 2>&1\\)\")",
+      "Bash(cp .env.example .env)",
+      "Bash(python3 -c \"import secrets; print\\(secrets.token_urlsafe\\(48\\)\\)\")",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}

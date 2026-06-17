@@ -43,7 +43,7 @@ export function Layout({ children }: { children: ReactNode }) {
               <NavItem to="/">Plans</NavItem>
               <NavItem to="/garmin">
                 <span className="flex items-center gap-1.5">
-                  <Watch className="h-4 w-4" /> My Garmin
+                  <Watch className="h-4 w-4" /> My Board
                 </span>
               </NavItem>
               <NavItem to="/profile">

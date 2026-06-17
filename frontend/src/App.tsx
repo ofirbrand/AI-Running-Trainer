@@ -7,7 +7,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { OnboardingGarminPage } from "./pages/OnboardingGarminPage";
 import { Plans } from "./pages/Plans";
-import { MyGarminPage } from "./pages/MyGarminPage";
+import { MyBoard } from "./pages/MyBoard";
 import { ProfilePage } from "./pages/ProfilePage";
 import { CreatePlanPage } from "./pages/CreatePlanPage";
 import { PlanOverviewPage } from "./pages/PlanOverviewPage";
@@ -67,7 +67,7 @@ export default function App() {
         path="/garmin"
         element={
           <Protected>
-            <MyGarminPage />
+            <MyBoard />
           </Protected>
         }
       />

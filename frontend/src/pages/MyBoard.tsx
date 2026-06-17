@@ -117,7 +117,7 @@ function Stat({
   );
 }
 
-export function MyGarminPage() {
+export function MyBoard() {
   const navigate = useNavigate();
   const qc = useQueryClient();
 
@@ -186,7 +186,7 @@ export function MyGarminPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">My Garmin</h1>
+          <h1 className="text-2xl font-bold text-slate-900">My Board</h1>
           <p className="text-sm text-slate-500">
             Your latest activities, straight from your device.
           </p>
@@ -212,7 +212,7 @@ export function MyGarminPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">My Garmin</h1>
+          <h1 className="text-2xl font-bold text-slate-900">My Board</h1>
           <p className="text-sm text-slate-500">
             Connected as {status?.garmin_email}
             {status?.last_sync_at ? ` · last sync ${formatDate(status.last_sync_at)}` : ""}
