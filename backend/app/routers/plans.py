@@ -1,11 +1,14 @@
 """Training plan creation, review, approval, chat edits, and updates."""
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
 from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -108,6 +111,112 @@ def _calendar_for(version: PlanVersion) -> tuple[date, int]:
 
 
 # --------------------------------------------------------------------------- #
+# Context builders (shared by the synchronous and streaming endpoints)
+# --------------------------------------------------------------------------- #
+
+
+async def _create_context(
+    db: Session, user: User, inputs: PlanInputs
+) -> tuple[date, int, dict[str, Any]]:
+    start_date, num_weeks = plan_builder.compute_calendar(inputs.target_date)
+    context = plan_builder.build_base_context(db, user)
+
+    # Activity history is opt-in: only inject activities the user asked for.
+    activities: list[dict[str, Any]] = []
+    if (
+        inputs.include_activity_history
+        and inputs.activity_history_start
+        and inputs.activity_history_end
+    ):
+        conn = user.garmin
+        if conn is not None and conn.status != "disconnected":
+            try:
+                await run_in_threadpool(
+                    garmin_service.fetch_activities_window,
+                    db,
+                    user,
+                    inputs.activity_history_start,
+                    inputs.activity_history_end,
+                )
+            except (garmin_service.GarminError, garmin_service.GarminAuthError):
+                pass  # best-effort; fall back to whatever is already stored
+        activities = plan_builder.gather_activities_in_range(
+            db, user, inputs.activity_history_start, inputs.activity_history_end
+        )
+    context["activities"] = activities
+    context.update(
+        {
+            "inputs": inputs.model_dump(mode="json"),
+            "start_date": start_date.isoformat(),
+            "num_weeks": num_weeks,
+            "target_date": inputs.target_date.isoformat(),
+        }
+    )
+    return start_date, num_weeks, context
+
+
+def _confirm_context(
+    db: Session, user: User, plan: TrainingPlan, base: PlanVersion, requests: list[str]
+) -> tuple[date, int, dict[str, Any]]:
+    start_date, num_weeks = _calendar_for(base)
+    context = plan_builder.build_base_context(db, user)
+    context.update(
+        {
+            "inputs": base.inputs_snapshot or {},
+            "current_plan": plan_builder.current_plan_to_dict(base),
+            "change_requests": requests,
+            "start_date": start_date.isoformat(),
+            "num_weeks": num_weeks,
+            "target_date": plan.target_date.isoformat() if plan.target_date else None,
+        }
+    )
+    return start_date, num_weeks, context
+
+
+def _weekly_context(
+    db: Session, user: User, plan: TrainingPlan, base: PlanVersion
+) -> tuple[date, int, dict[str, Any]]:
+    start_date, num_weeks = _calendar_for(base)
+    context = plan_builder.build_base_context(db, user)
+    context.update(
+        {
+            "inputs": base.inputs_snapshot or {},
+            "current_plan": plan_builder.current_plan_to_dict(base),
+            "progress": matching.progress_summary(db, user, base),
+            "start_date": start_date.isoformat(),
+            "num_weeks": num_weeks,
+            "target_date": plan.target_date.isoformat() if plan.target_date else None,
+            "current_week": matching.current_week_no(base),
+        }
+    )
+    return start_date, num_weeks, context
+
+
+def _manual_context(
+    db: Session, user: User, plan: TrainingPlan, base: PlanVersion, request_text: str
+) -> tuple[date, int, dict[str, Any]]:
+    start_date, num_weeks = _calendar_for(base)
+    context = plan_builder.build_base_context(db, user)
+    context.update(
+        {
+            "inputs": base.inputs_snapshot or {},
+            "current_plan": plan_builder.current_plan_to_dict(base),
+            "request_text": request_text,
+            "start_date": start_date.isoformat(),
+            "num_weeks": num_weeks,
+            "target_date": plan.target_date.isoformat() if plan.target_date else None,
+            "current_week": matching.current_week_no(base),
+        }
+    )
+    return start_date, num_weeks, context
+
+
+def _sse(event: dict[str, Any]) -> str:
+    """Serialize one event as a Server-Sent Events frame."""
+    return f"data: {json.dumps(event, default=str)}\n\n"
+
+
+# --------------------------------------------------------------------------- #
 # Listing & prefill
 # --------------------------------------------------------------------------- #
 
@@ -192,41 +301,7 @@ async def create_plan(
     db.add(plan)
     db.flush()
 
-    start_date, num_weeks = plan_builder.compute_calendar(inputs.target_date)
-    context = plan_builder.build_base_context(db, user)
-
-    # Activity history is opt-in: only inject activities the user asked for.
-    activities: list[dict[str, Any]] = []
-    if (
-        inputs.include_activity_history
-        and inputs.activity_history_start
-        and inputs.activity_history_end
-    ):
-        conn = user.garmin
-        if conn is not None and conn.status != "disconnected":
-            try:
-                await run_in_threadpool(
-                    garmin_service.fetch_activities_window,
-                    db,
-                    user,
-                    inputs.activity_history_start,
-                    inputs.activity_history_end,
-                )
-            except (garmin_service.GarminError, garmin_service.GarminAuthError):
-                pass  # best-effort; fall back to whatever is already stored
-        activities = plan_builder.gather_activities_in_range(
-            db, user, inputs.activity_history_start, inputs.activity_history_end
-        )
-    context["activities"] = activities
-
-    context.update(
-        {
-            "inputs": inputs.model_dump(mode="json"),
-            "start_date": start_date.isoformat(),
-            "num_weeks": num_weeks,
-            "target_date": inputs.target_date.isoformat(),
-        }
-    )
+    start_date, num_weeks, context = await _create_context(db, user, inputs)
     ai_model, effort = _settings(user)
     agent_plan = await agent_service.generate(context, ai_model, effort)
 
@@ -243,6 +318,62 @@ async def create_plan(
     db.commit()
     db.refresh(plan)
     return plan
+
+
+@router.post("/stream")
+async def create_plan_stream(
+    inputs: PlanInputs,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """Generate a new plan, streaming the agent's prompt, reasoning, and steps
+    live as Server-Sent Events. Ends with a ``done`` event carrying the new
+    plan id."""
+    _require_agent()
+    ai_model, effort = _settings(user)
+
+    async def gen() -> AsyncIterator[str]:
+        try:
+            plan_builder.save_input_metrics(db, user, inputs)
+            plan = TrainingPlan(
+                user_id=user.id,
+                title=inputs.title or f"{inputs.distance_label} plan",
+                distance_label=inputs.distance_label,
+                distance_m=inputs.distance_m,
+                target_date=inputs.target_date,
+                goal_type=inputs.goal_type,
+                goal_value=inputs.goal_value,
+                is_race=inputs.is_race,
+                status="draft",
+            )
+            db.add(plan)
+            db.flush()
+            start_date, num_weeks, context = await _create_context(db, user, inputs)
+
+            async for event in agent_service.generate_stream(context, ai_model, effort):
+                if event.get("type") == "plan":
+                    version = plan_builder.materialize_version(
+                        db,
+                        plan,
+                        event["plan"],
+                        start_date=start_date,
+                        num_weeks=num_weeks,
+                        source="generated",
+                        status="draft",
+                        inputs_snapshot=inputs.model_dump(mode="json"),
+                    )
+                    db.commit()
+                    db.refresh(plan)
+                    yield _sse(
+                        {"type": "done", "plan_id": plan.id, "version_id": version.id}
+                    )
+                else:
+                    yield _sse(event)
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            yield _sse({"type": "error", "message": str(exc)})
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 # --------------------------------------------------------------------------- #
@@ -346,18 +477,7 @@ async def confirm_changes(
             )
         )
 
-    start_date, num_weeks = _calendar_for(base)
-    context = plan_builder.build_base_context(db, user)
-    context.update(
-        {
-            "inputs": base.inputs_snapshot or {},
-            "current_plan": plan_builder.current_plan_to_dict(base),
-            "change_requests": payload.requests,
-            "start_date": start_date.isoformat(),
-            "num_weeks": num_weeks,
-            "target_date": plan.target_date.isoformat() if plan.target_date else None,
-        }
-    )
+    start_date, num_weeks, context = _confirm_context(db, user, plan, base, payload.requests)
     ai_model, effort = _settings(user)
     agent_plan = await agent_service.regenerate_with_changes(context, ai_model, effort)
     new_version = plan_builder.materialize_version(
@@ -379,6 +499,69 @@ async def confirm_changes(
     )
 
 
+@router.post("/{plan_id}/confirm-changes/stream")
+async def confirm_changes_stream(
+    plan_id: int,
+    payload: ConfirmChangesIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    _require_agent()
+    plan = _get_plan(db, user, plan_id)
+    base = _latest_reviewable_version(plan)
+    if base is None:
+        raise HTTPException(status_code=400, detail="No plan version to revise.")
+    ai_model, effort = _settings(user)
+
+    async def gen() -> AsyncIterator[str]:
+        try:
+            for text in payload.requests:
+                db.add(
+                    PlanChangeRequest(
+                        plan_id=plan.id,
+                        from_version_id=base.id,
+                        kind="chat_edit",
+                        request_text=text,
+                    )
+                )
+            start_date, num_weeks, context = _confirm_context(
+                db, user, plan, base, payload.requests
+            )
+            async for event in agent_service.regenerate_with_changes_stream(
+                context, ai_model, effort
+            ):
+                if event.get("type") == "plan":
+                    agent_plan = event["plan"]
+                    new_version = plan_builder.materialize_version(
+                        db,
+                        plan,
+                        agent_plan,
+                        start_date=start_date,
+                        num_weeks=num_weeks,
+                        source="chat_edit",
+                        status="proposed",
+                        inputs_snapshot=base.inputs_snapshot,
+                    )
+                    db.commit()
+                    yield _sse(
+                        {
+                            "type": "done",
+                            "plan_id": plan.id,
+                            "update_recommended": True,
+                            "proposed_version_id": new_version.id,
+                            "change_summary": agent_plan.change_summary,
+                            "message": "Revised plan ready for review.",
+                        }
+                    )
+                else:
+                    yield _sse(event)
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            yield _sse({"type": "error", "message": str(exc)})
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
 # --------------------------------------------------------------------------- #
 # Updates: weekly review + manual change
 # --------------------------------------------------------------------------- #
@@ -396,20 +579,7 @@ async def weekly_update(
     if base is None:
         raise HTTPException(status_code=400, detail="No active plan to review.")
 
-    start_date, num_weeks = _calendar_for(base)
-    progress = matching.progress_summary(db, user, base)
-    context = plan_builder.build_base_context(db, user)
-    context.update(
-        {
-            "inputs": base.inputs_snapshot or {},
-            "current_plan": plan_builder.current_plan_to_dict(base),
-            "progress": progress,
-            "start_date": start_date.isoformat(),
-            "num_weeks": num_weeks,
-            "target_date": plan.target_date.isoformat() if plan.target_date else None,
-            "current_week": matching.current_week_no(base),
-        }
-    )
+    start_date, num_weeks, context = _weekly_context(db, user, plan, base)
     ai_model, effort = _settings(user)
     agent_plan = await agent_service.weekly_review(context, ai_model, effort)
 
@@ -440,6 +610,67 @@ async def weekly_update(
     )
 
 
+@router.post("/{plan_id}/weekly-update/stream")
+async def weekly_update_stream(
+    plan_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    _require_agent()
+    plan = _get_plan(db, user, plan_id)
+    base = plan.active_version or _latest_reviewable_version(plan)
+    if base is None:
+        raise HTTPException(status_code=400, detail="No active plan to review.")
+    ai_model, effort = _settings(user)
+
+    async def gen() -> AsyncIterator[str]:
+        try:
+            start_date, num_weeks, context = _weekly_context(db, user, plan, base)
+            async for event in agent_service.weekly_review_stream(context, ai_model, effort):
+                if event.get("type") == "plan":
+                    agent_plan = event["plan"]
+                    summary = (agent_plan.change_summary or "").strip()
+                    if summary == NO_CHANGE or not summary:
+                        yield _sse(
+                            {
+                                "type": "done",
+                                "plan_id": plan.id,
+                                "update_recommended": False,
+                                "message": "Your plan is on track — no changes "
+                                "recommended this week.",
+                            }
+                        )
+                    else:
+                        new_version = plan_builder.materialize_version(
+                            db,
+                            plan,
+                            agent_plan,
+                            start_date=start_date,
+                            num_weeks=num_weeks,
+                            source="weekly_update",
+                            status="proposed",
+                            inputs_snapshot=base.inputs_snapshot,
+                        )
+                        db.commit()
+                        yield _sse(
+                            {
+                                "type": "done",
+                                "plan_id": plan.id,
+                                "update_recommended": True,
+                                "proposed_version_id": new_version.id,
+                                "change_summary": summary,
+                                "message": "A plan update is recommended.",
+                            }
+                        )
+                else:
+                    yield _sse(event)
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            yield _sse({"type": "error", "message": str(exc)})
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
 @router.post("/{plan_id}/manual-update", response_model=WeeklyUpdateResult)
 async def manual_update(
     plan_id: int,
@@ -461,18 +692,8 @@ async def manual_update(
             request_text=payload.request_text,
         )
     )
-    start_date, num_weeks = _calendar_for(base)
-    context = plan_builder.build_base_context(db, user)
-    context.update(
-        {
-            "inputs": base.inputs_snapshot or {},
-            "current_plan": plan_builder.current_plan_to_dict(base),
-            "request_text": payload.request_text,
-            "start_date": start_date.isoformat(),
-            "num_weeks": num_weeks,
-            "target_date": plan.target_date.isoformat() if plan.target_date else None,
-            "current_week": matching.current_week_no(base),
-        }
+    start_date, num_weeks, context = _manual_context(
+        db, user, plan, base, payload.request_text
     )
     ai_model, effort = _settings(user)
     agent_plan = await agent_service.manual_update(context, ai_model, effort)
@@ -493,6 +714,66 @@ async def manual_update(
         change_summary=agent_plan.change_summary,
         message="Updated plan ready for review.",
     )
+
+
+@router.post("/{plan_id}/manual-update/stream")
+async def manual_update_stream(
+    plan_id: int,
+    payload: ManualUpdateIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    _require_agent()
+    plan = _get_plan(db, user, plan_id)
+    base = plan.active_version or _latest_reviewable_version(plan)
+    if base is None:
+        raise HTTPException(status_code=400, detail="No plan to update.")
+    ai_model, effort = _settings(user)
+
+    async def gen() -> AsyncIterator[str]:
+        try:
+            db.add(
+                PlanChangeRequest(
+                    plan_id=plan.id,
+                    from_version_id=base.id,
+                    kind="manual_update",
+                    request_text=payload.request_text,
+                )
+            )
+            start_date, num_weeks, context = _manual_context(
+                db, user, plan, base, payload.request_text
+            )
+            async for event in agent_service.manual_update_stream(context, ai_model, effort):
+                if event.get("type") == "plan":
+                    agent_plan = event["plan"]
+                    new_version = plan_builder.materialize_version(
+                        db,
+                        plan,
+                        agent_plan,
+                        start_date=start_date,
+                        num_weeks=num_weeks,
+                        source="manual_update",
+                        status="proposed",
+                        inputs_snapshot=base.inputs_snapshot,
+                    )
+                    db.commit()
+                    yield _sse(
+                        {
+                            "type": "done",
+                            "plan_id": plan.id,
+                            "update_recommended": True,
+                            "proposed_version_id": new_version.id,
+                            "change_summary": agent_plan.change_summary,
+                            "message": "Updated plan ready for review.",
+                        }
+                    )
+                else:
+                    yield _sse(event)
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            yield _sse({"type": "error", "message": str(exc)})
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 # --------------------------------------------------------------------------- #

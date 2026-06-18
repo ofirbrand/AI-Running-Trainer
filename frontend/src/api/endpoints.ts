@@ -3,6 +3,7 @@ import type {
   ActivityDetail,
   ActivityFetchResult,
   ActivitySummary,
+  GarminHealth,
   GarminStatus,
   Metric,
   PlanDetail,
@@ -42,6 +43,10 @@ export const garminApi = {
       .then((r) => r.data),
   disconnect: () => api.post<GarminStatus>("/garmin/disconnect").then((r) => r.data),
   sync: () => api.post<SyncResult>("/garmin/sync").then((r) => r.data),
+  health: (date?: string) =>
+    api
+      .get<GarminHealth>("/garmin/health", { params: date ? { date } : {} })
+      .then((r) => r.data),
   activities: (params?: { start?: string; end?: string; limit?: number }) =>
     api.get<ActivitySummary[]>("/garmin/activities", { params }).then((r) => r.data),
   activity: (id: number) =>

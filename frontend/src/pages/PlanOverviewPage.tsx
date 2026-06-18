@@ -10,6 +10,7 @@ import {
   LineChart,
   MessageSquarePlus,
   RefreshCw,
+  ScrollText,
   Sparkles,
   Target,
   Trophy,
@@ -21,9 +22,11 @@ import { Badge, Banner, PageLoader, Spinner } from "../components/ui";
 import { WeeklyTable } from "../components/WeeklyTable";
 import { PlanDiff } from "../components/PlanDiff";
 import { ChatPopup } from "../components/ChatPopup";
+import { AIProcessingModal, useAIProcessing } from "../components/AIProcessingStream";
+import { useHasTrace } from "../state/aiProcessingStore";
 import { InfoTip } from "../components/InfoTip";
 import { formatDate, relativeDay, titleCase } from "../lib/format";
-import type { PlanDetail, PlanVersion, WeeklyUpdateResult } from "../api/types";
+import type { PlanDetail, PlanVersion } from "../api/types";
 
 export function PlanOverviewPage() {
   const { id } = useParams();
@@ -40,8 +43,46 @@ export function PlanOverviewPage() {
   const [manualOpen, setManualOpen] = useState(false);
   const [dismissedProposed, setDismissedProposed] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const ai = useAIProcessing();
+  const hasTrace = useHasTrace(planId);
 
   const refetch = () => qc.invalidateQueries({ queryKey: ["plan", planId] });
+
+  async function runWeekly() {
+    try {
+      const done = await ai.run(`/plans/${planId}/weekly-update/stream`);
+      if (done.update_recommended) {
+        setDismissedProposed(null);
+        void refetch();
+      } else {
+        setNotice(done.message ?? "No changes recommended.");
+      }
+    } catch {
+      /* error surfaced in the AI processing modal */
+    }
+  }
+
+  async function runManual(text: string) {
+    setManualOpen(false);
+    try {
+      await ai.run(`/plans/${planId}/manual-update/stream`, { request_text: text });
+      setDismissedProposed(null);
+      void refetch();
+    } catch {
+      /* error surfaced in the AI processing modal */
+    }
+  }
+
+  async function runConfirm(requests: string[]) {
+    setChatOpen(false);
+    try {
+      await ai.run(`/plans/${planId}/confirm-changes/stream`, { requests });
+      setDismissedProposed(null);
+      void refetch();
+    } catch {
+      /* error surfaced in the AI processing modal */
+    }
+  }
 
   const activeVersion = useMemo(
     () => plan?.versions.find((v) => v.status === "active") ?? plan?.active_version ?? null,
@@ -182,18 +223,13 @@ export function PlanOverviewPage() {
           <>
             <p className="mr-auto text-sm font-medium text-slate-700">Update training plan</p>
             <UpdateMenu
-              planId={planId}
-              onWeekly={(res) => {
-                if (res.update_recommended) {
-                  setDismissedProposed(null);
-                  void refetch();
-                } else {
-                  setNotice(res.message ?? "No changes recommended.");
-                }
-              }}
+              running={ai.open && ai.trace.status === "running"}
+              hasTrace={hasTrace}
+              onWeekly={() => void runWeekly()}
               onOpenManual={() => setManualOpen(true)}
               onOpenVersions={() => setVersionsOpen(true)}
               onRequestChat={() => setChatOpen(true)}
+              onViewProcessing={() => ai.replay(planId)}
             />
           </>
         )}
@@ -203,23 +239,16 @@ export function PlanOverviewPage() {
         planId={planId}
         open={chatOpen}
         onOpenChange={setChatOpen}
-        onConfirmed={(res: WeeklyUpdateResult) => {
-          setChatOpen(false);
-          setDismissedProposed(null);
-          void refetch();
-        }}
+        onConfirm={(requests) => void runConfirm(requests)}
       />
 
       <ManualUpdateDialog
-        planId={planId}
         open={manualOpen}
         onOpenChange={setManualOpen}
-        onDone={() => {
-          setManualOpen(false);
-          setDismissedProposed(null);
-          void refetch();
-        }}
+        onSubmit={(text) => void runManual(text)}
       />
+
+      <AIProcessingModal trace={ai.trace} open={ai.open} onOpenChange={ai.setOpen} />
 
       <VersionsDialog
         plan={plan}
@@ -265,60 +294,63 @@ function PlanHeader({ plan }: { plan: PlanDetail }) {
 }
 
 function UpdateMenu({
-  planId,
+  running,
+  hasTrace,
   onWeekly,
   onOpenManual,
   onOpenVersions,
   onRequestChat,
+  onViewProcessing,
 }: {
-  planId: number;
-  onWeekly: (res: WeeklyUpdateResult) => void;
+  running: boolean;
+  hasTrace: boolean;
+  onWeekly: () => void;
   onOpenManual: () => void;
   onOpenVersions: () => void;
   onRequestChat: () => void;
+  onViewProcessing: () => void;
 }) {
-  const weekly = useMutation({
-    mutationFn: () => plansApi.weeklyUpdate(planId),
-    onSuccess: onWeekly,
-  });
   return (
     <div className="flex flex-wrap gap-2">
-      <button className="btn-secondary" onClick={() => weekly.mutate()} disabled={weekly.isPending}>
-        {weekly.isPending ? <Spinner /> : <RefreshCw className="h-4 w-4" />} Weekly review
+      <button className="btn-secondary" onClick={onWeekly} disabled={running}>
+        {running ? <Spinner /> : <RefreshCw className="h-4 w-4" />} Weekly review
         <InfoTip text="Reviews the workouts you actually completed this week and proposes an updated plan if helpful." />
       </button>
-      <button className="btn-secondary" onClick={onOpenManual}>
+      <button className="btn-secondary" onClick={onOpenManual} disabled={running}>
         <Sparkles className="h-4 w-4" /> Change details
       </button>
-      <button className="btn-secondary" onClick={onRequestChat}>
+      <button className="btn-secondary" onClick={onRequestChat} disabled={running}>
         <MessageSquarePlus className="h-4 w-4" /> Chat with coach
       </button>
       <button className="btn-secondary" onClick={onOpenVersions}>
         <History className="h-4 w-4" /> Versions
       </button>
+      {hasTrace && (
+        <button className="btn-secondary" onClick={onViewProcessing}>
+          <ScrollText className="h-4 w-4" /> View AI processing
+        </button>
+      )}
     </div>
   );
 }
 
 function ManualUpdateDialog({
-  planId,
   open,
   onOpenChange,
-  onDone,
+  onSubmit,
 }: {
-  planId: number;
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  onDone: () => void;
+  onSubmit: (text: string) => void;
 }) {
   const [text, setText] = useState("");
-  const mutation = useMutation({
-    mutationFn: () => plansApi.manualUpdate(planId, text),
-    onSuccess: () => {
-      setText("");
-      onDone();
-    },
-  });
+
+  function submit() {
+    const value = text.trim();
+    if (!value) return;
+    setText("");
+    onSubmit(value);
+  }
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -337,7 +369,6 @@ function ManualUpdateDialog({
             Describe what to change — e.g. "push the race to Oct 12", "drop to 4 days a week", or
             "I'm on vacation June 20-28, no running".
           </p>
-          {mutation.isError && <Banner kind="error">{apiErrorMessage(mutation.error)}</Banner>}
           <textarea
             className="input min-h-[120px]"
             value={text}
@@ -346,12 +377,8 @@ function ManualUpdateDialog({
           />
           <div className="mt-4 flex justify-end gap-2">
             <Dialog.Close className="btn-secondary">Cancel</Dialog.Close>
-            <button
-              className="btn-primary"
-              onClick={() => mutation.mutate()}
-              disabled={!text.trim() || mutation.isPending}
-            >
-              {mutation.isPending ? <Spinner /> : <Sparkles className="h-4 w-4" />} Generate update
+            <button className="btn-primary" onClick={submit} disabled={!text.trim()}>
+              <Sparkles className="h-4 w-4" /> Generate update
             </button>
           </div>
         </Dialog.Content>

@@ -87,6 +87,18 @@ class SyncResult(BaseModel):
     last_sync_at: datetime | None = None
 
 
+class GarminHealthOut(BaseModel):
+    """Live daily-health (9 methods) and advanced-health (12 methods) metric sets.
+
+    Each value under ``daily``/``advanced`` is the raw Garmin payload for that
+    method, or ``None`` when the metric was unavailable for the requested date.
+    """
+
+    date: date
+    daily: dict[str, Any] = Field(default_factory=dict)
+    advanced: dict[str, Any] = Field(default_factory=dict)
+
+
 # --------------------------------------------------------------------------- #
 # Metrics
 # --------------------------------------------------------------------------- #
@@ -332,6 +344,7 @@ class ActivityDetail(BaseModel):
     avg_pace_s_per_km: float | None = None
     calories: float | None = None
     raw: dict[str, Any] | None = None
+    laps: list[dict[str, Any]] | None = None
     created_at: datetime | None = None
 
 

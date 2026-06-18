@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity as ActivityIcon,
   CalendarSearch,
+  ChevronDown,
   Gauge,
   HeartPulse,
   RefreshCw,
@@ -13,6 +14,11 @@ import {
 import { garminApi } from "../api/endpoints";
 import { apiErrorMessage } from "../api/client";
 import { ActivityDetailModal } from "../components/ActivityDetailModal";
+import {
+  ADVANCED_HEALTH_DEFS,
+  DAILY_HEALTH_DEFS,
+  HealthGrid,
+} from "../components/HealthMetrics";
 import { Badge, Banner, PageLoader, Spinner } from "../components/ui";
 import {
   formatDate,
@@ -117,6 +123,39 @@ function Stat({
   );
 }
 
+function CollapsibleSection({
+  title,
+  actions,
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  actions?: React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button
+          type="button"
+          className="flex items-center gap-2 text-lg font-semibold text-slate-800"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+        >
+          <ChevronDown
+            className={`h-5 w-5 text-slate-400 transition-transform ${open ? "" : "-rotate-90"}`}
+          />
+          {title}
+        </button>
+        {actions && <div className="flex items-center gap-2">{actions}</div>}
+      </div>
+      {open && children}
+    </section>
+  );
+}
+
 export function MyBoard() {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -131,6 +170,18 @@ export function MyBoard() {
   const { data: latest, isLoading: latestLoading } = useQuery({
     queryKey: ["garmin-activities", "latest"],
     queryFn: () => garminApi.activities({ limit: 1 }),
+    enabled: connected,
+  });
+
+  const [healthDate, setHealthDate] = useState(todayIso());
+  const {
+    data: health,
+    isLoading: healthLoading,
+    isFetching: healthFetching,
+    error: healthError,
+  } = useQuery({
+    queryKey: ["garmin-health", healthDate],
+    queryFn: () => garminApi.health(healthDate),
     enabled: connected,
   });
 
@@ -226,6 +277,42 @@ export function MyBoard() {
       {syncMessage && <Banner kind="success">{syncMessage}</Banner>}
       {syncError && <Banner kind="error">{syncError}</Banner>}
       {status?.last_sync_error && <Banner kind="warning">{status.last_sync_error}</Banner>}
+
+      <CollapsibleSection
+        title="Daily health & activity"
+        actions={
+          <>
+            {healthFetching && <Spinner />}
+            <input
+              type="date"
+              className="input"
+              aria-label="Health date"
+              value={healthDate}
+              max={todayIso()}
+              onChange={(e) => setHealthDate(e.target.value)}
+            />
+          </>
+        }
+      >
+        {healthError && <Banner kind="warning">{apiErrorMessage(healthError)}</Banner>}
+        {healthLoading ? (
+          <div className="card p-5">
+            <Spinner />
+          </div>
+        ) : (
+          <HealthGrid defs={DAILY_HEALTH_DEFS} data={health?.daily} />
+        )}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Health & performance metrics">
+        {healthLoading ? (
+          <div className="card p-5">
+            <Spinner />
+          </div>
+        ) : (
+          <HealthGrid defs={ADVANCED_HEALTH_DEFS} data={health?.advanced} />
+        )}
+      </CollapsibleSection>
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold text-slate-800">Last activity</h2>

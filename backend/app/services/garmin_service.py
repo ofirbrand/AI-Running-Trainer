@@ -18,7 +18,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models import Activity, DailyHealth, GarminConnection, MetricObservation, User
+from ..models import (
+    Activity,
+    DailyHealth,
+    GarminConnection,
+    HealthSnapshot,
+    MetricObservation,
+    User,
+)
 
 logger = logging.getLogger("coach.garmin")
 settings = get_settings()
@@ -147,6 +154,95 @@ def _safe(client: Any, method: str, *args: Any) -> tuple[bool, Any]:
         return False, None
 
 
+# --------------------------------------------------------------------------- #
+# Live health & performance metrics (read-only, not persisted)
+# --------------------------------------------------------------------------- #
+
+# The two metric groups exactly as the ``garminconnect`` library documents them.
+# Each tuple is (response key, client method). The order here is the display
+# order on "My Board". Every method takes a single calendar date unless handled
+# specially in :func:`fetch_health_metrics` below.
+DAILY_HEALTH_METHODS: list[tuple[str, str]] = [
+    ("stats", "get_stats"),
+    ("user_summary", "get_user_summary"),
+    ("stats_and_body", "get_stats_and_body"),
+    ("steps", "get_steps_data"),
+    ("heart_rates", "get_heart_rates"),
+    ("resting_heart_rate", "get_rhr_day"),
+    ("sleep", "get_sleep_data"),
+    ("all_day_stress", "get_all_day_stress"),
+    ("lifestyle_logging", "get_lifestyle_logging_data"),
+]
+
+ADVANCED_HEALTH_METHODS: list[tuple[str, str]] = [
+    ("training_readiness", "get_training_readiness"),
+    ("morning_training_readiness", "get_morning_training_readiness"),
+    ("training_status", "get_training_status"),
+    ("respiration", "get_respiration_data"),
+    ("spo2", "get_spo2_data"),
+    ("max_metrics", "get_max_metrics"),
+    ("hrv", "get_hrv_data"),
+    ("fitness_age", "get_fitnessage_data"),
+    ("stress", "get_stress_data"),
+    ("lactate_threshold", "get_lactate_threshold"),
+    ("intensity_minutes", "get_intensity_minutes_data"),
+    ("running_tolerance", "get_running_tolerance"),
+]
+
+
+def _fetch_daily_payloads(client: Any, iso: str) -> dict[str, Any]:
+    """Call the 9 daily-health methods for a single calendar date."""
+    out: dict[str, Any] = {}
+    for key, method in DAILY_HEALTH_METHODS:
+        _, out[key] = _safe(client, method, iso)
+    return out
+
+
+def _fetch_advanced_payloads(client: Any, iso: str, week_start: str) -> dict[str, Any]:
+    """Call the 12 advanced health & performance methods.
+
+    Two of them don't take a single calendar date: ``get_lactate_threshold`` is
+    keyword-only (latest) and ``get_running_tolerance`` needs a date range.
+    """
+    out: dict[str, Any] = {}
+    for key, method in ADVANCED_HEALTH_METHODS:
+        if method == "get_lactate_threshold":
+            _, out[key] = _safe(client, method)
+        elif method == "get_running_tolerance":
+            _, out[key] = _safe(client, method, week_start, iso)
+        else:
+            _, out[key] = _safe(client, method, iso)
+    return out
+
+
+def fetch_health_metrics(db: Session, user: User, on_date: date) -> dict[str, Any]:
+    """Live-fetch the full daily-health (9) and advanced-health (12) metric sets.
+
+    Read-only: results are returned straight to the caller and never persisted.
+    Every Garmin call goes through :func:`_safe`, so an unavailable metric simply
+    comes back as ``None`` instead of failing the whole request.
+    """
+    conn = user.garmin
+    if conn is None:
+        raise GarminError("No Garmin account connected.")
+
+    try:
+        client = load_client(Path(conn.token_dir))
+    except GarminAuthError as exc:
+        conn.status = "expired"
+        conn.last_sync_error = str(exc)
+        db.commit()
+        raise
+
+    iso = on_date.isoformat()
+    week_start = (on_date - timedelta(days=6)).isoformat()
+    return {
+        "date": iso,
+        "daily": _fetch_daily_payloads(client, iso),
+        "advanced": _fetch_advanced_payloads(client, iso, week_start),
+    }
+
+
 def sync_user(db: Session, user: User, lookback_days: int | None = None) -> dict[str, Any]:
     """Pull activities, daily health, and fitness metrics for a user."""
     conn = user.garmin
@@ -167,8 +263,10 @@ def sync_user(db: Session, user: User, lookback_days: int | None = None) -> dict
         raise
 
     activities_synced = _sync_activities(db, user, client, start, today, errors)
-    days_synced = _sync_daily_health(db, user, client, min(lookback, 10), today, errors)
-    metrics_updated = _sync_metrics(db, user, client, today, errors)
+    days_synced, advanced_today = _sync_health(
+        db, user, client, min(lookback, 10), today, errors
+    )
+    metrics_updated = _sync_metrics(db, user, today, errors, advanced_today)
 
     conn.last_sync_at = datetime.now(timezone.utc)
     conn.last_sync_error = "; ".join(errors) if errors else None
@@ -217,6 +315,30 @@ def fetch_activities_window(db: Session, user: User, start: date, end: date) -> 
             logger.info("activity parse failed: %s", exc)
     db.commit()
     return count
+
+
+def fetch_activity_laps(user: User, activity: Activity) -> list[dict[str, Any]] | None:
+    """Best-effort live fetch of a single activity's lap / interval splits.
+
+    Laps are not part of the ``get_activities_by_date`` summary payload, so they
+    are pulled on demand the first time an activity is opened. Like
+    :func:`fetch_health_metrics` this reads straight from Garmin and persists
+    nothing. Returns ``None`` when Garmin is unavailable (disconnected, expired
+    session, or the splits endpoint failed) and an empty list when the activity
+    genuinely has no laps — letting the caller tell "couldn't load" from "none".
+    """
+    conn = user.garmin
+    if conn is None or conn.status != "connected" or not activity.garmin_activity_id:
+        return None
+    try:
+        client = load_client(Path(conn.token_dir))
+    except GarminError:
+        return None
+    ok, data = _safe(client, "get_activity_splits", activity.garmin_activity_id)
+    if not ok or not isinstance(data, dict):
+        return None
+    laps = data.get("lapDTOs")
+    return laps if isinstance(laps, list) else []
 
 
 def _sync_activities(
@@ -294,80 +416,132 @@ def _upsert_activity(db: Session, user: User, raw: dict[str, Any]) -> int:
     return 0
 
 
-def _sync_daily_health(
+def _sync_health(
     db: Session, user: User, client: Any, days: int, end: date, errors: list[str]
-) -> int:
+) -> tuple[int, dict[str, Any]]:
+    """Pull and persist the full health & performance data set for the window.
+
+    For each day in the window the 9 daily-health methods are fetched and stored
+    as a :class:`HealthSnapshot`, and the parsed :class:`DailyHealth` summary
+    columns are derived from those same payloads. The 12 advanced performance
+    metrics are captured once — for ``end`` (today) — as the current-fitness
+    snapshot. Returns the number of days with daily data and today's advanced
+    payloads (reused by :func:`_sync_metrics` to avoid duplicate API calls).
+    """
+    advanced_today: dict[str, Any] = {}
     count = 0
     for i in range(days):
         cdate = end - timedelta(days=i)
         iso = cdate.isoformat()
-        payload: dict[str, Any] = {}
+        daily = _fetch_daily_payloads(client, iso)
 
-        ok, summary = _safe(client, "get_user_summary", iso)
-        if ok and isinstance(summary, dict):
-            payload["steps"] = summary.get("totalSteps")
-            payload["resting_hr"] = summary.get("restingHeartRate")
-            payload["avg_stress"] = summary.get("averageStressLevel")
-            payload["body_battery_high"] = summary.get("bodyBatteryHighestValue")
-            payload["body_battery_low"] = summary.get("bodyBatteryLowestValue")
-            payload["summary"] = summary
+        advanced: dict[str, Any] = {}
+        if i == 0:
+            week_start = (cdate - timedelta(days=6)).isoformat()
+            advanced = _fetch_advanced_payloads(client, iso, week_start)
+            advanced_today = advanced
 
-        ok, sleep = _safe(client, "get_sleep_data", iso)
-        if ok and isinstance(sleep, dict):
-            dto = sleep.get("dailySleepDTO") or {}
-            payload["sleep_seconds"] = dto.get("sleepTimeSeconds")
-            scores = dto.get("sleepScores") or {}
-            overall = scores.get("overall") if isinstance(scores, dict) else None
-            if isinstance(overall, dict):
-                payload["sleep_score"] = overall.get("value")
+        has_daily = any(v is not None for v in daily.values())
+        has_advanced = any(v is not None for v in advanced.values())
+        if has_daily or has_advanced:
+            _upsert_health_snapshot(db, user.id, cdate, daily, advanced)
+        if _upsert_daily_health(db, user, cdate, daily):
+            count += 1
 
-        if not payload:
-            continue
-
-        existing = db.scalar(
-            select(DailyHealth).where(
-                DailyHealth.user_id == user.id, DailyHealth.date == cdate
-            )
-        )
-        target = existing or DailyHealth(user_id=user.id, date=cdate)
-        if "steps" in payload:
-            target.steps = payload.get("steps")
-        if payload.get("resting_hr"):
-            target.resting_hr = payload.get("resting_hr")
-        if payload.get("sleep_seconds"):
-            target.sleep_seconds = payload.get("sleep_seconds")
-        if payload.get("sleep_score"):
-            target.sleep_score = payload.get("sleep_score")
-        if payload.get("avg_stress"):
-            target.avg_stress = payload.get("avg_stress")
-        if payload.get("body_battery_high"):
-            target.body_battery_high = payload.get("body_battery_high")
-        if payload.get("body_battery_low"):
-            target.body_battery_low = payload.get("body_battery_low")
-        target.raw = payload.get("summary")
-        if existing is None:
-            db.add(target)
-        count += 1
+    if count == 0:
+        errors.append("Could not fetch daily health data.")
     db.commit()
-    return count
+    return count, advanced_today
+
+
+def _upsert_health_snapshot(
+    db: Session,
+    user_id: int,
+    cdate: date,
+    daily: dict[str, Any],
+    advanced: dict[str, Any],
+) -> None:
+    existing = db.scalar(
+        select(HealthSnapshot).where(
+            HealthSnapshot.user_id == user_id, HealthSnapshot.date == cdate
+        )
+    )
+    target = existing or HealthSnapshot(user_id=user_id, date=cdate)
+    target.daily = daily
+    # ``advanced`` is only fetched for today; don't wipe a prior snapshot's
+    # advanced metrics on days where we didn't refetch them.
+    if advanced:
+        target.advanced = advanced
+    if existing is None:
+        db.add(target)
+
+
+def _upsert_daily_health(
+    db: Session, user: User, cdate: date, daily: dict[str, Any]
+) -> bool:
+    """Derive the parsed DailyHealth summary columns from raw daily payloads."""
+    summary = daily.get("user_summary") or daily.get("stats")
+    sleep = daily.get("sleep")
+
+    payload: dict[str, Any] = {}
+    if isinstance(summary, dict):
+        payload["steps"] = summary.get("totalSteps")
+        payload["resting_hr"] = summary.get("restingHeartRate")
+        payload["avg_stress"] = summary.get("averageStressLevel")
+        payload["body_battery_high"] = summary.get("bodyBatteryHighestValue")
+        payload["body_battery_low"] = summary.get("bodyBatteryLowestValue")
+        payload["summary"] = summary
+    if isinstance(sleep, dict):
+        dto = sleep.get("dailySleepDTO") or {}
+        payload["sleep_seconds"] = dto.get("sleepTimeSeconds")
+        scores = dto.get("sleepScores") or {}
+        overall = scores.get("overall") if isinstance(scores, dict) else None
+        if isinstance(overall, dict):
+            payload["sleep_score"] = overall.get("value")
+
+    if not payload:
+        return False
+
+    existing = db.scalar(
+        select(DailyHealth).where(
+            DailyHealth.user_id == user.id, DailyHealth.date == cdate
+        )
+    )
+    target = existing or DailyHealth(user_id=user.id, date=cdate)
+    if "steps" in payload:
+        target.steps = payload.get("steps")
+    if payload.get("resting_hr"):
+        target.resting_hr = payload.get("resting_hr")
+    if payload.get("sleep_seconds"):
+        target.sleep_seconds = payload.get("sleep_seconds")
+    if payload.get("sleep_score"):
+        target.sleep_score = payload.get("sleep_score")
+    if payload.get("avg_stress"):
+        target.avg_stress = payload.get("avg_stress")
+    if payload.get("body_battery_high"):
+        target.body_battery_high = payload.get("body_battery_high")
+    if payload.get("body_battery_low"):
+        target.body_battery_low = payload.get("body_battery_low")
+    target.raw = payload.get("summary")
+    if existing is None:
+        db.add(target)
+    return True
 
 
 def _sync_metrics(
-    db: Session, user: User, client: Any, today: date, errors: list[str]
+    db: Session, user: User, today: date, errors: list[str], advanced: dict[str, Any]
 ) -> int:
     updated = 0
-    iso = today.isoformat()
 
-    # VO2 max
-    ok, maxm = _safe(client, "get_max_metrics", iso)
-    vo2 = _extract_vo2max(maxm) if ok else None
+    # VO2 max and training load are derived from today's advanced snapshot, which
+    # _sync_health already fetched — so there are no extra Garmin calls here.
+    vo2 = _extract_vo2max(advanced.get("max_metrics"))
     if vo2:
         _upsert_metric(db, user.id, "vo2max", vo2, "ml/kg/min", today)
         updated += 1
 
-    # Training status / load
-    ok, ts = _safe(client, "get_training_status", iso)
-    if ok and isinstance(ts, dict):
+    ts = advanced.get("training_status")
+    if isinstance(ts, dict):
         load = _extract_training_load(ts)
         if load is not None:
             _upsert_metric(db, user.id, "training_load", load, "score", today)

@@ -13,7 +13,17 @@
       "Bash(echo \"npm: $\\(npm --version 2>&1\\)\")",
       "Bash(cp .env.example .env)",
       "Bash(python3 -c \"import secrets; print\\(secrets.token_urlsafe\\(48\\)\\)\")",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -c \"import garminconnect, os; print\\(os.path.dirname\\(garminconnect.__file__\\)\\)\")",
+      "Read(//Users/ofirbrand/.claude/plans/**)",
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(../.venv/bin/python -c ' *)",
+      "Bash(../.venv/bin/python -m pytest -q)",
+      "Bash(npm run *)",
+      "Bash(python -m pytest tests/test_garmin_sync.py -q)",
+      "Bash(npx tsc *)",
+      "Bash(python3 -c \"import pytest; print\\('pytest', pytest.__version__\\)\")",
+      "Bash(../.venv/bin/python -m pytest tests/test_garmin_sync.py -q)"
     ]
   }
 }

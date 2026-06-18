@@ -4,7 +4,6 @@ import { Send, Sparkles, X } from "lucide-react";
 import clsx from "clsx";
 import { plansApi } from "../api/endpoints";
 import { apiErrorMessage } from "../api/client";
-import type { WeeklyUpdateResult } from "../api/types";
 import { Spinner } from "./ui";
 
 interface Message {
@@ -16,12 +15,12 @@ export function ChatPopup({
   planId,
   open,
   onOpenChange,
-  onConfirmed,
+  onConfirm,
 }: {
   planId: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirmed: (result: WeeklyUpdateResult) => void;
+  onConfirm: (requests: string[]) => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -32,7 +31,6 @@ export function ChatPopup({
   ]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const userMessages = messages.filter((m) => m.role === "user").map((m) => m.content);
@@ -58,21 +56,13 @@ export function ChatPopup({
     }
   }
 
-  async function confirm() {
+  function confirm() {
     if (userMessages.length === 0) {
       setError("Describe at least one change before regenerating.");
       return;
     }
-    setConfirming(true);
     setError(null);
-    try {
-      const result = await plansApi.confirmChanges(planId, userMessages);
-      onConfirmed(result);
-    } catch (err) {
-      setError(apiErrorMessage(err));
-    } finally {
-      setConfirming(false);
-    }
+    onConfirm(userMessages);
   }
 
   return (
@@ -145,18 +135,10 @@ export function ChatPopup({
             </div>
             <button
               className="btn-primary mt-3 w-full"
-              onClick={() => void confirm()}
-              disabled={confirming || userMessages.length === 0}
+              onClick={confirm}
+              disabled={userMessages.length === 0}
             >
-              {confirming ? (
-                <>
-                  <Spinner /> Regenerating…
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" /> These are all my changes — regenerate plan
-                </>
-              )}
+              <Sparkles className="h-4 w-4" /> These are all my changes — regenerate plan
             </button>
           </div>
         </Dialog.Content>

@@ -31,6 +31,17 @@ export interface SyncResult {
   last_sync_at?: string | null;
 }
 
+/**
+ * Live daily-health (9 methods) and advanced-health (12 methods) metric sets.
+ * Each value is the raw Garmin payload for that method, keyed by metric name,
+ * or null when unavailable for the requested date.
+ */
+export interface GarminHealth {
+  date: string;
+  daily: Record<string, unknown>;
+  advanced: Record<string, unknown>;
+}
+
 export interface Metric {
   key: string;
   value: unknown;
@@ -111,6 +122,23 @@ export interface ActivityFetchResult {
   activities: ActivitySummary[];
 }
 
+/** One lap / interval split from Garmin's `get_activity_splits` (`lapDTOs`). */
+export interface ActivityLap {
+  lapIndex?: number | null;
+  distance?: number | null; // meters
+  duration?: number | null; // seconds
+  movingDuration?: number | null;
+  elapsedDuration?: number | null;
+  averageSpeed?: number | null; // m/s
+  maxSpeed?: number | null; // m/s
+  averageHR?: number | null;
+  maxHR?: number | null;
+  averageRunCadence?: number | null;
+  elevationGain?: number | null;
+  calories?: number | null;
+  [key: string]: unknown;
+}
+
 export interface ActivityDetail extends ActivitySummary {
   garmin_activity_id?: string | null;
   start_time?: string | null;
@@ -118,6 +146,7 @@ export interface ActivityDetail extends ActivitySummary {
   calories?: number | null;
   created_at?: string | null;
   raw?: Record<string, unknown> | null;
+  laps?: ActivityLap[] | null;
 }
 
 export type TrackingStatus =
@@ -182,4 +211,34 @@ export interface WeeklyUpdateResult {
   proposed_version_id?: number | null;
   change_summary?: string | null;
   message?: string | null;
+}
+
+// --- Live AI processing stream ---
+
+export interface DoneEvent {
+  type: "done";
+  plan_id: number;
+  version_id?: number;
+  update_recommended?: boolean;
+  proposed_version_id?: number | null;
+  change_summary?: string | null;
+  message?: string | null;
+}
+
+export type AIProcessingEvent =
+  | { type: "prompt"; system: string; user: string }
+  | { type: "thinking"; delta: string }
+  | { type: "text"; delta: string }
+  | { type: "step"; label: string }
+  | DoneEvent
+  | { type: "error"; message: string };
+
+/** Accumulated record of one agent run, rendered live and re-openable later. */
+export interface AITrace {
+  prompt?: { system: string; user: string };
+  thinking: string;
+  text: string;
+  steps: string[];
+  status: "running" | "done" | "error";
+  error?: string;
 }

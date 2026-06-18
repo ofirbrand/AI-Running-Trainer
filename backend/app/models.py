@@ -179,6 +179,30 @@ class DailyHealth(Base):
     )
 
 
+class HealthSnapshot(Base):
+    """Complete raw Garmin health & performance payloads for a single date.
+
+    Stores everything a sync pulls beyond activities: the 9 daily-health methods
+    (``daily``) and the 12 advanced health & performance methods (``advanced``),
+    each a ``{method_key: raw_payload}`` map. The parsed ``DailyHealth`` columns
+    are derived from ``daily``; this table keeps the full fidelity for the AI
+    coach and the board. One row per (user, date)."""
+
+    __tablename__ = "health_snapshots"
+    __table_args__ = (
+        UniqueConstraint("user_id", "date", name="uq_health_snapshot_user_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    date: Mapped[date] = mapped_column(Date, index=True)
+    daily: Mapped[dict | None] = mapped_column(JSON)  # {method_key: raw_payload}
+    advanced: Mapped[dict | None] = mapped_column(JSON)  # {method_key: raw_payload}
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow
+    )
+
+
 class TrainingPlan(Base):
     __tablename__ = "training_plans"
 

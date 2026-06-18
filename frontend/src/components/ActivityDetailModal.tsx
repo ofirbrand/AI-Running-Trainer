@@ -13,6 +13,56 @@ import {
   titleCase,
 } from "../lib/format";
 import { Badge, Banner, Spinner } from "./ui";
+import type { ActivityLap } from "../api/types";
+
+/** Pace in s/km for a lap, from its avg speed or distance/duration fallback. */
+function lapPaceSecPerKm(lap: ActivityLap): number | null {
+  if (typeof lap.averageSpeed === "number" && lap.averageSpeed > 0) {
+    return 1000 / lap.averageSpeed;
+  }
+  if (lap.distance && lap.duration && lap.distance > 0) {
+    return lap.duration / (lap.distance / 1000);
+  }
+  return null;
+}
+
+function LapsSection({ laps }: { laps: ActivityLap[] }) {
+  return (
+    <details className="rounded-lg border border-slate-200">
+      <summary className="cursor-pointer px-4 py-2 text-sm font-medium text-slate-600">
+        Laps &amp; intervals ({laps.length})
+      </summary>
+      <div className="max-h-80 overflow-auto px-4 pb-3">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+              <th className="py-1 pr-3">Lap</th>
+              <th className="py-1 pr-3">Distance</th>
+              <th className="py-1 pr-3">Time</th>
+              <th className="py-1 pr-3">Pace</th>
+              <th className="py-1">Avg HR</th>
+            </tr>
+          </thead>
+          <tbody>
+            {laps.map((lap, i) => (
+              <tr key={i} className="border-t border-slate-100 text-slate-700">
+                <td className="py-1.5 pr-3 font-medium text-slate-900">
+                  {typeof lap.lapIndex === "number" ? lap.lapIndex : i + 1}
+                </td>
+                <td className="py-1.5 pr-3">{formatDistance(lap.distance)}</td>
+                <td className="py-1.5 pr-3">{formatDuration(lap.duration)}</td>
+                <td className="py-1.5 pr-3">{formatPace(lapPaceSecPerKm(lap))}</td>
+                <td className="py-1.5">
+                  {typeof lap.averageHR === "number" ? `${Math.round(lap.averageHR)} bpm` : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
 
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -153,6 +203,10 @@ export function ActivityDetailModal({
                     </Stat>
                   ))}
                 </dl>
+
+                {detail.laps && detail.laps.length > 0 && (
+                  <LapsSection laps={detail.laps} />
+                )}
 
                 <details className="rounded-lg border border-slate-200">
                   <summary className="cursor-pointer px-4 py-2 text-sm font-medium text-slate-600">

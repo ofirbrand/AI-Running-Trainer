@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,7 @@ from ..schemas import (
     ActivityFetchResult,
     ActivityOut,
     GarminConnectIn,
+    GarminHealthOut,
     GarminStatus,
     MetricIn,
     MetricOut,
@@ -113,6 +114,34 @@ def sync_now(
     return SyncResult(**result)
 
 
+@router.get("/health", response_model=GarminHealthOut)
+def get_health(
+    for_date: date | None = Query(
+        None, alias="date", description="Calendar date (YYYY-MM-DD); defaults to today."
+    ),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GarminHealthOut:
+    """Live-fetch the 9 daily-health and 12 advanced-health metric sets for a date.
+
+    Reads directly from Garmin (not the local DB) and does not persist anything,
+    so it always reflects the latest data for the requested day.
+    """
+    if user.garmin is None or user.garmin.status == "disconnected":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No Garmin account connected.",
+        )
+    on_date = for_date or date.today()
+    try:
+        data = garmin_service.fetch_health_metrics(db, user, on_date)
+    except garmin_service.GarminAuthError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc))
+    except garmin_service.GarminError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+    return GarminHealthOut(**data)
+
+
 def _query_activities(
     db: Session,
     user: User,
@@ -191,7 +220,10 @@ def get_activity(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Activity not found."
         )
-    return ActivityDetail.model_validate(act)
+    detail = ActivityDetail.model_validate(act)
+    # Laps aren't in the stored summary payload — fetch them live, best-effort.
+    detail.laps = garmin_service.fetch_activity_laps(user, act)
+    return detail
 
 
 @router.get("/metrics", response_model=list[MetricOut])

@@ -34,8 +34,8 @@ class Settings(BaseSettings):
     garmin_tokens_dir: str = "./data/garmin_tokens"
 
     # AI defaults
-    default_ai_model: str = "claude-sonnet-4-5"
-    default_reasoning_effort: str = "medium"
+    default_ai_model: str = "claude-opus-4-8"
+    default_reasoning_effort: str = "high"
 
     # Sync
     daily_sync_hour: int = 5

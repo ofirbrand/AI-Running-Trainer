@@ -6,6 +6,7 @@ import { garminApi, plansApi, profileApi } from "../api/endpoints";
 import type { PrefillResponse } from "../api/endpoints";
 import { apiErrorMessage } from "../api/client";
 import { Banner, Field, PageLoader, Spinner } from "../components/ui";
+import { AIProcessingModal, useAIProcessing } from "../components/AIProcessingStream";
 import { InfoTip } from "../components/InfoTip";
 import { EMPTY_PROFILE, ProfileForm } from "../components/ProfileForm";
 import { formatDate } from "../lib/format";
@@ -118,6 +119,7 @@ export function CreatePlanPage() {
   const [varyByDay, setVaryByDay] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const ai = useAIProcessing();
 
   useEffect(() => {
     if (!prefill) return;
@@ -205,10 +207,11 @@ export function CreatePlanPage() {
         activity_history_start: includeHistory ? inputs.activity_history_start : null,
         activity_history_end: includeHistory ? inputs.activity_history_end : null,
       };
-      const plan = await plansApi.create(payload);
-      navigate(`/plans/${plan.id}`);
+      const done = await ai.run("/plans/stream", payload);
+      navigate(`/plans/${done.plan_id}`);
     } catch (err) {
-      setError(apiErrorMessage(err, "Could not generate the plan."));
+      const message = err instanceof Error ? err.message : apiErrorMessage(err, "Could not generate the plan.");
+      setError(message);
       setBusy(false);
     }
   }
@@ -547,11 +550,13 @@ export function CreatePlanPage() {
           </div>
           {busy && (
             <p className="text-center text-sm text-slate-400">
-              The coach is designing your plan — this can take up to a minute.
+              The coach is designing your plan — watch it work below.
             </p>
           )}
         </div>
       )}
+
+      <AIProcessingModal trace={ai.trace} open={ai.open} onOpenChange={ai.setOpen} />
     </div>
   );
 }
