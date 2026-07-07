@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .db import init_db
-from .routers import auth, garmin, plans, profile, settings as settings_router, tracking
+from .routers import auth, garmin, internal, plans, profile, settings as settings_router, tracking
 from .services import scheduler
 
 logging.basicConfig(level=logging.INFO)
@@ -23,11 +23,13 @@ async def lifespan(app: FastAPI):
     if settings.anthropic_api_key:
         os.environ.setdefault("ANTHROPIC_API_KEY", settings.anthropic_api_key)
     init_db()
-    scheduler.start_scheduler()
+    if settings.enable_scheduler:
+        scheduler.start_scheduler()
     try:
         yield
     finally:
-        scheduler.shutdown_scheduler()
+        if settings.enable_scheduler:
+            scheduler.shutdown_scheduler()
 
 
 app = FastAPI(title="AI Running Coach", version="0.1.0", lifespan=lifespan)
@@ -47,6 +49,7 @@ app.include_router(garmin.router)
 app.include_router(plans.router)
 app.include_router(tracking.router)
 app.include_router(settings_router.router)
+app.include_router(internal.router)
 
 
 @app.get("/api/health")

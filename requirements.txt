@@ -20,6 +20,12 @@ curl_cffi>=0.7
 # Claude Agent SDK (requires Python 3.10+ and Node.js available on PATH)
 claude-agent-sdk>=0.1
 
+# Direct Anthropic API backend (AI_BACKEND=api; used in the Vercel deployment)
+anthropic>=0.40
+
+# Postgres driver (hosted DB for the Vercel deployment + migration script)
+psycopg[binary]>=3.1
+
 # Testing
 pytest>=8.2
 pytest-asyncio>=0.23

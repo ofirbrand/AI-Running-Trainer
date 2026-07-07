@@ -1,0 +1,20 @@
+# Production dependencies for the Vercel Python function.
+#
+# Deliberately slimmer than the root requirements.txt: claude-agent-sdk
+# (~200MB, vendors the Node CLI) is excluded because production uses
+# AI_BACKEND=api (direct Anthropic API); uvicorn and the test stack are
+# excluded because Vercel provides the server and never runs tests.
+# Keep version floors in sync with the root file.
+fastapi>=0.115
+sqlalchemy>=2.0
+pydantic[email]>=2.7
+pydantic-settings>=2.3
+email-validator>=2.1
+python-multipart>=0.0.9
+bcrypt>=4.1
+pyjwt>=2.8
+APScheduler>=3.10
+garminconnect>=0.2
+curl_cffi>=0.7
+anthropic>=0.40
+psycopg[binary]>=3.1

@@ -22,6 +22,11 @@ settings = get_settings()
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterIn, db: Session = Depends(get_db)) -> Token:
+    if not settings.allow_registration:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is disabled.",
+        )
     existing = db.scalar(select(User).where(User.email == payload.email.lower()))
     if existing:
         raise HTTPException(

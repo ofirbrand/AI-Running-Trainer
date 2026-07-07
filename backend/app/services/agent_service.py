@@ -42,6 +42,10 @@ class AgentUnavailableError(AgentError):
 
 
 def is_available() -> bool:
+    if settings.ai_backend == "api":
+        from . import agent_api  # lazy import
+
+        return agent_api.is_available()
     if not (settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")):
         return False
     try:
@@ -93,9 +97,18 @@ def _extract_json(text: str) -> dict[str, Any] | None:
 async def _run_agent(system_prompt: str, user_prompt: str, model: str, effort: str) -> dict[str, Any]:
     """Run the agent loop and return the captured plan dict.
 
-    This is the single integration point with the Claude Agent SDK and is the
-    function monkeypatched in tests.
+    Backend dispatcher (AI_BACKEND: "sdk" | "api") and the function
+    monkeypatched in tests.
     """
+    if settings.ai_backend == "api":
+        from . import agent_api  # lazy import
+
+        return await agent_api.run_agent(system_prompt, user_prompt, model, effort)
+    return await _run_agent_sdk(system_prompt, user_prompt, model, effort)
+
+
+async def _run_agent_sdk(system_prompt: str, user_prompt: str, model: str, effort: str) -> dict[str, Any]:
+    """Claude Agent SDK implementation of the agent loop."""
     _ensure_api_key()
     from claude_agent_sdk import (  # lazy import
         ClaudeAgentOptions,
@@ -255,8 +268,22 @@ async def _stream_agent(
     system_prompt: str, user_prompt: str, model: str, effort: str
 ) -> AsyncIterator[dict[str, Any]]:
     """Run the agent loop, yielding live events and finally ``{"type": "plan",
-    "plan": <dict>}``. Single streaming integration point (monkeypatched in
-    tests)."""
+    "plan": <dict>}``. Backend dispatcher (AI_BACKEND: "sdk" | "api") and the
+    function monkeypatched in tests."""
+    if settings.ai_backend == "api":
+        from . import agent_api  # lazy import
+
+        impl = agent_api.stream_agent
+    else:
+        impl = _stream_agent_sdk
+    async for event in impl(system_prompt, user_prompt, model, effort):
+        yield event
+
+
+async def _stream_agent_sdk(
+    system_prompt: str, user_prompt: str, model: str, effort: str
+) -> AsyncIterator[dict[str, Any]]:
+    """Claude Agent SDK implementation of the streaming agent loop."""
     _ensure_api_key()
     from claude_agent_sdk import (  # lazy import
         ClaudeAgentOptions,
@@ -362,7 +389,6 @@ async def chat_reply(messages: list[dict[str, str]], context: dict[str, Any], ai
     Does not produce a full plan; it helps clarify the requested changes.
     """
     _ensure_api_key()
-    from claude_agent_sdk import ClaudeAgentOptions, query  # lazy import
 
     system = (
         "You are a running coach helping the athlete describe changes they want to "
@@ -375,6 +401,13 @@ async def chat_reply(messages: list[dict[str, str]], context: dict[str, Any], ai
         convo.append(f"{m['role'].upper()}: {m['content']}")
     convo.append("ASSISTANT:")
     prompt = "\n".join(convo)
+
+    if settings.ai_backend == "api":
+        from . import agent_api  # lazy import
+
+        return await agent_api.chat_once(system, prompt, ai_model)
+
+    from claude_agent_sdk import ClaudeAgentOptions, query  # lazy import
 
     option_kwargs: dict[str, Any] = {"system_prompt": system, "model": ai_model, "max_turns": 1}
     if "setting_sources" in _option_field_names(ClaudeAgentOptions):

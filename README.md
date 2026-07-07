@@ -220,6 +220,53 @@ All configuration lives in `.env` (see `.env.example`):
 | `DEFAULT_AI_MODEL` / `DEFAULT_REASONING_EFFORT` | Defaults for new users (changeable per-user in Settings). |
 | `DAILY_SYNC_HOUR` | Hour (0-23, local time) for the automatic daily sync. |
 | `SYNC_LOOKBACK_DAYS` | How many days back a routine sync pulls. |
+| `AI_BACKEND` | `sdk` (Claude Agent SDK, local default) or `api` (direct Anthropic API, used on Vercel). |
+| `GARMIN_TOKEN_STORE` | `file` (local default) or `db` (token blob in the database, used on Vercel). |
+| `ENABLE_SCHEDULER` | In-process daily sync (default `true`; `false` on Vercel). |
+| `ALLOW_REGISTRATION` | Allow new signups (default `true`; set `false` on a public deployment). |
+| `CRON_SECRET` | Enables `GET /api/internal/daily-sync` for external schedulers (unset locally). |
+
+## Deploying to Vercel
+
+The app deploys as a single Vercel project: the Vite frontend is served
+statically and the FastAPI backend runs as a Python serverless function
+(`api/index.py`, routed via `vercel.json`). Local behavior is unchanged — every
+serverless adaptation is opt-in via environment variables.
+
+What differs in production:
+
+- **Database**: hosted Postgres (e.g. Neon via the Vercel marketplace) through
+  `DATABASE_URL`. `postgres://` URLs are normalized to the psycopg driver
+  automatically.
+- **AI**: `AI_BACKEND=api` swaps the Claude Agent SDK (which spawns a local
+  Node CLI and can't run in a serverless function) for a direct Anthropic API
+  implementation with identical streaming events and the same `submit_plan`
+  tool (`backend/app/services/agent_api.py`).
+- **Garmin tokens**: `GARMIN_TOKEN_STORE=db` stores the session-token blob in
+  the `garmin_connections` row instead of files on disk.
+- **Daily sync**: `ENABLE_SCHEDULER=false`; a Vercel Cron entry calls
+  `GET /api/internal/daily-sync` authenticated with `CRON_SECRET`.
+- **Registration**: set `ALLOW_REGISTRATION=false` once the owner account
+  exists.
+
+Setup outline:
+
+1. Create the Vercel project from this repo (the included `vercel.json`
+   supplies build command, rewrites, function config, and the cron schedule).
+2. Add a Neon Postgres database and set the env vars: `ANTHROPIC_API_KEY`, a
+   fresh `APP_SECRET_KEY`, `DATABASE_URL`, `AI_BACKEND=api`,
+   `GARMIN_TOKEN_STORE=db`, `ENABLE_SCHEDULER=false`, `CRON_SECRET`,
+   `DEFAULT_AI_MODEL`, `DEFAULT_REASONING_EFFORT`.
+3. Migrate your local data (including Garmin tokens) from the repo root:
+   `python scripts/migrate_sqlite_to_postgres.py --dest "$NEON_URL" --import-tokens`
+4. Deploy, then smoke-test: `/api/health`, login, a plan generation stream,
+   and a manual Garmin sync.
+
+Notes: Vercel's Python function installs `api/requirements.txt` (a slim set
+without the ~200MB Agent SDK). The Hobby plan caps requests at 300s — very long
+high-effort plan generations can hit it; re-run or upgrade if that bites. If
+Garmin MFA is required while connecting through the deployment and it fails,
+connect locally and re-run the token import.
 
 ## Tests
 

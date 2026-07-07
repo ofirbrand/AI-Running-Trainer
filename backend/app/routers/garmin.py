@@ -52,7 +52,7 @@ def connect(
 ) -> dict[str, Any]:
     try:
         result = garmin_service.connect(
-            user.id, payload.garmin_email, payload.password, payload.mfa_code
+            db, user.id, payload.garmin_email, payload.password, payload.mfa_code
         )
     except garmin_service.MfaRequiredError:
         return {"mfa_required": True, "detail": "Enter the code from your authenticator."}
@@ -64,13 +64,15 @@ def connect(
     if result != "connected":
         return {"mfa_required": True}
 
-    token_dir = str(garmin_service.token_dir_for(user.id))
     conn = user.garmin
     if conn is None:
         conn = GarminConnection(user_id=user.id)
         db.add(conn)
     conn.garmin_email = payload.garmin_email
-    conn.token_dir = token_dir
+    # In DB token mode the service already stored the blob and the "db"
+    # sentinel; only file mode points token_dir at the filesystem.
+    if garmin_service.settings.garmin_token_store != "db":
+        conn.token_dir = str(garmin_service.token_dir_for(user.id))
     conn.status = "connected"
     conn.last_sync_error = None
     db.commit()

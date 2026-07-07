@@ -64,12 +64,71 @@ def token_dir_for(user_id: int) -> Path:
     return path
 
 
+def _token_source(conn: GarminConnection) -> Path | str:
+    """What to hand to ``load_client``: the DB token blob or the token dir.
+
+    ``Garmin.login`` natively accepts either a filesystem path or the raw
+    token JSON (strings longer than 512 chars are treated as token data).
+    """
+    if settings.garmin_token_store == "db" and conn.token_data:
+        return conn.token_data
+    return Path(conn.token_dir)
+
+
+def _dump_blob(client: Any) -> str:
+    """Serialize the client's session tokens to a JSON string."""
+    try:
+        garth = getattr(client, "garth", None)
+        if garth is not None and hasattr(garth, "dumps"):
+            return garth.dumps()
+        inner = getattr(client, "client", None)
+        dumps = getattr(inner, "dumps", None)
+        if dumps is None:
+            raise AttributeError("Garmin client exposes neither garth.dumps nor client.dumps")
+        return dumps()
+    except Exception as exc:  # noqa: BLE001
+        raise GarminError(f"Could not serialize Garmin session tokens: {exc}") from exc
+
+
+def _store_tokens(db: Session, user_id: int, garmin_email: str, client: Any) -> None:
+    """Persist session tokens after a successful login (file or DB store)."""
+    if settings.garmin_token_store == "db":
+        conn = db.scalar(
+            select(GarminConnection).where(GarminConnection.user_id == user_id)
+        )
+        if conn is None:
+            conn = GarminConnection(user_id=user_id, garmin_email=garmin_email, token_dir="db")
+            db.add(conn)
+        conn.token_data = _dump_blob(client)
+        conn.token_dir = "db"
+        db.commit()
+    else:
+        _persist_tokens(client, token_dir_for(user_id))
+
+
+def _repersist_if_changed(db: Session, conn: GarminConnection, client: Any) -> None:
+    """DB store only: capture tokens that ``login()`` proactively refreshed.
+
+    Loading from a path lets garminconnect self-persist refreshed tokens; a
+    string blob has no backing file, so we diff and write back to the row.
+    """
+    if settings.garmin_token_store != "db" or not conn.token_data:
+        return
+    try:
+        blob = _dump_blob(client)
+    except GarminError:
+        return
+    if blob != conn.token_data:
+        conn.token_data = blob
+        db.commit()
+
+
 # --------------------------------------------------------------------------- #
 # Connection / login (with MFA)
 # --------------------------------------------------------------------------- #
 
 
-def connect(user_id: int, garmin_email: str, password: str, mfa_code: str | None) -> str:
+def connect(db: Session, user_id: int, garmin_email: str, password: str, mfa_code: str | None) -> str:
     """Attempt to connect a Garmin account.
 
     Returns "connected" on success or "mfa_required" if a code is needed. When
@@ -77,8 +136,6 @@ def connect(user_id: int, garmin_email: str, password: str, mfa_code: str | None
     ``mfa_code`` filled in.
     """
     from garminconnect import Garmin  # lazy import
-
-    token_dir = token_dir_for(user_id)
 
     # Resume a pending MFA login.
     if mfa_code and user_id in _pending_mfa:
@@ -88,7 +145,7 @@ def connect(user_id: int, garmin_email: str, password: str, mfa_code: str | None
             client.resume_login(pending["state"], mfa_code.strip())
         except Exception as exc:  # noqa: BLE001
             raise GarminAuthError(f"MFA verification failed: {exc}") from exc
-        _persist_tokens(client, token_dir)
+        _store_tokens(db, user_id, garmin_email, client)
         _pending_mfa.pop(user_id, None)
         return "connected"
 
@@ -103,7 +160,7 @@ def connect(user_id: int, garmin_email: str, password: str, mfa_code: str | None
         _pending_mfa[user_id] = {"client": client, "state": result[1], "email": garmin_email}
         raise MfaRequiredError("Garmin requires a multi-factor authentication code.")
 
-    _persist_tokens(client, token_dir)
+    _store_tokens(db, user_id, garmin_email, client)
     return "connected"
 
 
@@ -122,8 +179,11 @@ def _persist_tokens(client: Any, token_dir: Path) -> None:
         raise GarminError(f"Could not save Garmin session tokens: {exc}") from exc
 
 
-def load_client(token_dir: Path) -> Any:
-    """Restore an authenticated Garmin client from stored tokens."""
+def load_client(token_dir: Path | str) -> Any:
+    """Restore an authenticated Garmin client from stored tokens.
+
+    Accepts a token directory path or the raw token JSON string (DB store).
+    """
     from garminconnect import Garmin  # lazy import
 
     client = Garmin()
@@ -227,12 +287,13 @@ def fetch_health_metrics(db: Session, user: User, on_date: date) -> dict[str, An
         raise GarminError("No Garmin account connected.")
 
     try:
-        client = load_client(Path(conn.token_dir))
+        client = load_client(_token_source(conn))
     except GarminAuthError as exc:
         conn.status = "expired"
         conn.last_sync_error = str(exc)
         db.commit()
         raise
+    _repersist_if_changed(db, conn, client)
 
     iso = on_date.isoformat()
     week_start = (on_date - timedelta(days=6)).isoformat()
@@ -255,12 +316,13 @@ def sync_user(db: Session, user: User, lookback_days: int | None = None) -> dict
     start = today - timedelta(days=lookback)
 
     try:
-        client = load_client(Path(conn.token_dir))
+        client = load_client(_token_source(conn))
     except GarminAuthError as exc:
         conn.status = "expired"
         conn.last_sync_error = str(exc)
         db.commit()
         raise
+    _repersist_if_changed(db, conn, client)
 
     activities_synced = _sync_activities(db, user, client, start, today, errors)
     days_synced, advanced_today = _sync_health(
@@ -294,12 +356,13 @@ def fetch_activities_window(db: Session, user: User, start: date, end: date) -> 
         raise GarminError("No Garmin account connected.")
 
     try:
-        client = load_client(Path(conn.token_dir))
+        client = load_client(_token_source(conn))
     except GarminAuthError as exc:
         conn.status = "expired"
         conn.last_sync_error = str(exc)
         db.commit()
         raise
+    _repersist_if_changed(db, conn, client)
 
     ok, data = _safe(
         client, "get_activities_by_date", start.isoformat(), end.isoformat()
@@ -331,7 +394,7 @@ def fetch_activity_laps(user: User, activity: Activity) -> list[dict[str, Any]] 
     if conn is None or conn.status != "connected" or not activity.garmin_activity_id:
         return None
     try:
-        client = load_client(Path(conn.token_dir))
+        client = load_client(_token_source(conn))
     except GarminError:
         return None
     ok, data = _safe(client, "get_activity_splits", activity.garmin_activity_id)

@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     # Storage
     database_url: str = "sqlite:///./data/coach.sqlite3"
     garmin_tokens_dir: str = "./data/garmin_tokens"
+    garmin_token_store: str = "file"  # "file" (local default) | "db" (serverless)
+
+    # Deployment toggles. Defaults preserve the local single-process behavior;
+    # a serverless deploy (Vercel) overrides them via environment variables.
+    ai_backend: str = "sdk"  # "sdk" (Claude Agent SDK) | "api" (direct Anthropic API)
+    enable_scheduler: bool = True
+    allow_registration: bool = True
 
     # AI defaults
     default_ai_model: str = "claude-opus-4-8"
@@ -53,6 +60,11 @@ class Settings(BaseSettings):
                 path = (BACKEND_DIR / raw_path).resolve()
             path.parent.mkdir(parents=True, exist_ok=True)
             return f"{prefix}{path}"
+        # Normalize Postgres URLs (Neon/Heroku hand out postgres:// and bare
+        # postgresql:// would select the uninstalled psycopg2 driver).
+        for pg_prefix in ("postgres://", "postgresql://"):
+            if url.startswith(pg_prefix) and not url.startswith("postgresql+"):
+                return "postgresql+psycopg://" + url[len(pg_prefix):]
         return url
 
     @property

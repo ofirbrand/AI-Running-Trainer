@@ -90,6 +90,9 @@ class GarminConnection(Base):
 
     garmin_email: Mapped[str] = mapped_column(String(255))
     token_dir: Mapped[str] = mapped_column(String(1024))
+    # Token JSON blob when GARMIN_TOKEN_STORE=db (serverless); token_dir then
+    # holds the sentinel "db" instead of a filesystem path.
+    token_data: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(32), default="connected")
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime)
     last_sync_error: Mapped[str | None] = mapped_column(Text)
