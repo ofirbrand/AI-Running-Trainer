@@ -69,8 +69,8 @@ export function ChatPopup({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 flex h-[600px] max-h-[90vh] w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl bg-white shadow-xl">
-          <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+        <Dialog.Content className="fixed inset-0 z-50 flex flex-col bg-white shadow-xl sm:inset-auto sm:left-1/2 sm:top-1/2 sm:h-[600px] sm:max-h-[90vh] sm:w-[92vw] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl">
+          <div className="flex items-center justify-between border-b border-slate-200 px-5 pb-4 pt-[calc(1rem_+_env(safe-area-inset-top))] sm:pt-4">
             <Dialog.Title className="flex items-center gap-2 font-semibold text-slate-900">
               <Sparkles className="h-5 w-5 text-brand-600" /> Request changes
             </Dialog.Title>
@@ -110,7 +110,7 @@ export function ChatPopup({
             <div className="px-5 pb-2 text-sm text-red-600">{error}</div>
           )}
 
-          <div className="border-t border-slate-200 px-5 py-3">
+          <div className="border-t border-slate-200 px-5 pt-3 pb-[calc(0.75rem_+_env(safe-area-inset-bottom))] sm:pb-3">
             <div className="flex items-end gap-2">
               <textarea
                 className="input min-h-[44px] resize-none"

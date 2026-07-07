@@ -29,6 +29,72 @@ build, track, and continuously update a personalized running training plan.
   metrics and recent activities.
 - **Settings** — choose the Claude model and reasoning effort.
 
+## Architecture
+
+A single-page React app talks to a FastAPI backend over `/api`; everything runs
+on your machine against a local SQLite database.
+
+```
+┌───────────────────────────┐   /api   ┌────────────────────────────────┐
+│  React + Vite  (:5173)     │ ───────▶ │  FastAPI  (:8000)              │
+│  React Query · Tailwind    │  proxy   │  routers → services            │
+│  SSE reader for AI streams │ ◀─────── │  auth · garmin · plans · …     │
+└───────────────────────────┘          │      │              │          │
+                                        │      ▼              ▼          │
+                                        │  SQLAlchemy     Claude Agent   │
+                                        │   (SQLite)          SDK        │
+                                        └──────┼──────────────┼──────────┘
+                                               ▼              ▼
+                                      coach.sqlite3 +   Anthropic API
+                                      Garmin tokens     Garmin Connect
+```
+
+- **Request flow & auth** — the SPA calls `/api/*`; the Vite dev server proxies
+  those to the backend, so only the frontend port is exposed. Auth is a JWT
+  bearer token (HS256, PyJWT) issued on login and verified via an OAuth2 bearer
+  scheme; passwords are hashed with bcrypt.
+- **AI plan generation** — the Claude Agent SDK drives a locked-down agent: one
+  custom in-process MCP tool, `submit_plan`, captures the structured plan, and
+  **no filesystem or shell tools are granted**. Reasoning effort maps to a
+  thinking-token budget. The SDK is imported lazily so the app and tests run
+  without it (and without a key) installed.
+- **Live streaming** — generation and updates stream over Server-Sent Events.
+  The backend yields event dicts (`prompt`, `thinking`, `text`, `step`, `plan`,
+  `done`); the frontend consumes them with `fetch` + `ReadableStream` rather than
+  `EventSource`, so it can send the `Authorization` header.
+- **Garmin sync** — the unofficial `garminconnect` library (over `curl_cffi`)
+  handles login, MFA, and token storage. Every network call is defensive: a
+  single failing endpoint never aborts a sync, and any metric it can't fetch
+  stays hand-editable. Runs on demand or via an APScheduler daily cron.
+- **Plans & versioning** — each plan holds an append-only chain of versions
+  (`draft → proposed → active → superseded`, plus `restored`), with an
+  `active_version` pointer marking the live one; generated, chat-edited,
+  weekly-, manual-, and restored versions all coexist for compare/restore.
+- **Tracking & matching** — after each sync a matching service pairs run
+  activities to planned workouts on an Israeli-week calendar (Sunday-first) to
+  compute completions and feed the weekly review.
+- **Data model (SQLite)** — a `User` owns a `Profile`, `GarminConnection`, and
+  `UserSettings`, plus synced `Activity`, `DailyHealth`, `HealthSnapshot`, and
+  `MetricObservation` rows. A `TrainingPlan` fans out to `PlanVersion` →
+  `PlannedWorkout`; `WorkoutCompletion` links matched activities and
+  `PlanChangeRequest` records edit requests.
+
+## Tech stack
+
+| Layer | Technology |
+| --- | --- |
+| Backend | Python 3.10+, FastAPI, Uvicorn (ASGI) |
+| Persistence | SQLAlchemy 2.0 ORM, SQLite |
+| Config & validation | Pydantic v2, pydantic-settings |
+| Auth | PyJWT (HS256), bcrypt, OAuth2 bearer |
+| Scheduling | APScheduler (background cron) |
+| AI | Claude Agent SDK + custom MCP tool → Anthropic API |
+| Garmin | `garminconnect` + `curl_cffi` (unofficial API) |
+| Frontend | React 18, TypeScript, Vite 5 |
+| Routing & data | React Router 6, TanStack Query 5, axios |
+| UI | Tailwind CSS 3, Radix UI, lucide-react |
+| Tests | pytest · pytest-asyncio · httpx / Vitest · Testing Library · jsdom |
+
 ## Requirements
 
 - **Python 3.10+** (tested on 3.13)

@@ -37,50 +37,88 @@ export function WeeklyTable({ version }: { version: PlanVersion }) {
   }, [version]);
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[820px] border-separate border-spacing-1">
-        <thead>
-          <tr>
-            <th className="w-16 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Week
-            </th>
-            {DAYS.map((d) => (
-              <th
-                key={d}
-                className="text-center text-xs font-semibold uppercase tracking-wide text-slate-400"
-              >
-                {d}
+    <>
+      {/* Desktop: full week-by-day grid */}
+      <div className="hidden overflow-x-auto sm:block">
+        <table className="w-full min-w-[820px] border-separate border-spacing-1">
+          <thead>
+            <tr>
+              <th className="w-16 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Week
               </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {weeks.map((week) => (
-            <tr key={week.week_no}>
-              <td className="align-top text-sm font-semibold text-slate-500">
-                {week.week_no}
-              </td>
-              {DAYS.map((_, day) => {
-                const workouts = week.byDay[day] ?? [];
-                return (
-                  <td key={day} className="align-top">
-                    <div className="flex h-full flex-col gap-1">
-                      {workouts.length === 0 ? (
-                        <div className="rounded-lg border border-dashed border-slate-100 px-2 py-3 text-center text-[11px] text-slate-300">
-                          Rest
-                        </div>
-                      ) : (
-                        workouts.map((w) => <WorkoutCell key={w.id} workout={w} />)
-                      )}
-                    </div>
-                  </td>
-                );
-              })}
+              {DAYS.map((d) => (
+                <th
+                  key={d}
+                  className="text-center text-xs font-semibold uppercase tracking-wide text-slate-400"
+                >
+                  {d}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {weeks.map((week) => (
+              <tr key={week.week_no}>
+                <td className="align-top text-sm font-semibold text-slate-500">
+                  {week.week_no}
+                </td>
+                {DAYS.map((_, day) => {
+                  const workouts = week.byDay[day] ?? [];
+                  return (
+                    <td key={day} className="align-top">
+                      <div className="flex h-full flex-col gap-1">
+                        {workouts.length === 0 ? (
+                          <div className="rounded-lg border border-dashed border-slate-100 px-2 py-3 text-center text-[11px] text-slate-300">
+                            Rest
+                          </div>
+                        ) : (
+                          workouts.map((w) => <WorkoutCell key={w.id} workout={w} />)
+                        )}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile: each week stacked, training days only */}
+      <div className="divide-y divide-slate-100 sm:hidden">
+        {weeks.map((week) => {
+          const days = DAYS.map((label, day) => ({
+            label,
+            workouts: week.byDay[day] ?? [],
+          })).filter((d) => d.workouts.length > 0);
+          return (
+            <div key={week.week_no} className="py-4 first:pt-0 last:pb-0">
+              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Week {week.week_no}
+              </h3>
+              {days.length === 0 ? (
+                <p className="text-sm text-slate-400">Rest week</p>
+              ) : (
+                <div className="space-y-3">
+                  {days.map((d) => (
+                    <div key={d.label}>
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        {d.label}
+                      </p>
+                      <div className="space-y-1">
+                        {d.workouts.map((w) => (
+                          <WorkoutCell key={w.id} workout={w} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 

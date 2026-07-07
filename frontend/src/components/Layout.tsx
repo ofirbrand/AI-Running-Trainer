@@ -3,6 +3,7 @@ import { Activity, LogOut, Settings as SettingsIcon, User, Watch } from "lucide-
 import clsx from "clsx";
 import type { ReactNode } from "react";
 import { useAuth } from "../auth/AuthContext";
+import { BottomTabBar } from "./BottomTabBar";
 
 function NavItem({ to, children }: { to: string; children: ReactNode }) {
   return (
@@ -39,7 +40,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </NavLink>
 
           {user && (
-            <nav className="flex items-center gap-1">
+            <nav className="hidden items-center gap-1 sm:flex">
               <NavItem to="/">Plans</NavItem>
               <NavItem to="/garmin">
                 <span className="flex items-center gap-1.5">
@@ -70,7 +71,11 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
+      <main className="mx-auto max-w-6xl px-4 pt-6 pb-[calc(5rem_+_env(safe-area-inset-bottom))] sm:py-8">
+        {children}
+      </main>
+
+      {user && <BottomTabBar />}
     </div>
   );
 }

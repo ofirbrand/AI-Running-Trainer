@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+.venv
 .venv/
 venv/
 .pytest_cache/
@@ -26,3 +27,4 @@ frontend/tsconfig.tsbuildinfo
 .DS_Store
 .idea/
 .vscode/
+.gstack/

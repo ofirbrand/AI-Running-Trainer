@@ -28,6 +28,43 @@ function StatusBadge({ status }: { status: TrackingStatus }) {
   );
 }
 
+function PlannedList({ day }: { day: TrackingDay }) {
+  if (day.planned.length === 0)
+    return <span className="text-sm text-slate-300">Rest day</span>;
+  return (
+    <div className="space-y-1.5">
+      {day.planned.map((p) => (
+        <div key={p.id} className="text-sm">
+          <span className="flex items-center gap-1 font-medium text-slate-700">
+            {p.workout_type}
+            <InfoTip
+              text={[p.goal, p.how_to].filter(Boolean).join("\n\n") || "No extra details."}
+            />
+          </span>
+          {p.goal && <p className="text-xs text-slate-500">{p.goal}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ActualList({ day }: { day: TrackingDay }) {
+  if (day.actual.length === 0) return <span className="text-sm text-slate-300">—</span>;
+  return (
+    <div className="space-y-1.5">
+      {day.actual.map((a) => (
+        <div key={a.id} className="text-sm text-slate-700">
+          <p className="font-medium">{a.name || a.activity_type || "Activity"}</p>
+          <p className="text-xs text-slate-500">
+            {formatDistance(a.distance_m)} · {formatDuration(a.duration_s)} ·{" "}
+            {formatPace(a.avg_pace_s_per_km)}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function DayRow({ day }: { day: TrackingDay }) {
   return (
     <tr className="border-b border-slate-100 last:border-0">
@@ -36,45 +73,43 @@ function DayRow({ day }: { day: TrackingDay }) {
         <p className="text-xs text-slate-400">{formatShortDate(day.date)}</p>
       </td>
       <td className="py-3 pr-3 align-top">
-        {day.planned.length === 0 ? (
-          <span className="text-sm text-slate-300">Rest day</span>
-        ) : (
-          <div className="space-y-1.5">
-            {day.planned.map((p) => (
-              <div key={p.id} className="text-sm">
-                <span className="flex items-center gap-1 font-medium text-slate-700">
-                  {p.workout_type}
-                  <InfoTip
-                    text={[p.goal, p.how_to].filter(Boolean).join("\n\n") || "No extra details."}
-                  />
-                </span>
-                {p.goal && <p className="text-xs text-slate-500">{p.goal}</p>}
-              </div>
-            ))}
-          </div>
-        )}
+        <PlannedList day={day} />
       </td>
       <td className="py-3 pr-3 align-top">
-        {day.actual.length === 0 ? (
-          <span className="text-sm text-slate-300">—</span>
-        ) : (
-          <div className="space-y-1.5">
-            {day.actual.map((a) => (
-              <div key={a.id} className="text-sm text-slate-700">
-                <p className="font-medium">{a.name || a.activity_type || "Activity"}</p>
-                <p className="text-xs text-slate-500">
-                  {formatDistance(a.distance_m)} · {formatDuration(a.duration_s)} ·{" "}
-                  {formatPace(a.avg_pace_s_per_km)}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
+        <ActualList day={day} />
       </td>
       <td className="py-3 align-top">
         <StatusBadge status={day.status} />
       </td>
     </tr>
+  );
+}
+
+function DayCard({ day }: { day: TrackingDay }) {
+  return (
+    <div className="py-4 first:pt-0 last:pb-0">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="font-semibold text-slate-800">{day.weekday_name}</p>
+          <p className="text-xs text-slate-400">{formatShortDate(day.date)}</p>
+        </div>
+        <StatusBadge status={day.status} />
+      </div>
+      <div className="mt-3 space-y-3">
+        <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Planned
+          </p>
+          <PlannedList day={day} />
+        </div>
+        <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Actual
+          </p>
+          <ActualList day={day} />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -120,34 +155,40 @@ export function TrackingPage() {
       </div>
 
       <div className="card p-6">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between gap-2">
           <button
             className="btn-ghost"
             onClick={() => setWeekNo(Math.max(1, current - 1))}
             disabled={!canPrev}
+            aria-label="Previous week"
           >
-            <ChevronLeft className="h-4 w-4" /> Previous
+            <ChevronLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">Previous</span>
           </button>
-          <p className="text-sm font-medium text-slate-600">
+          <p className="text-center text-sm font-medium text-slate-600">
             {formatShortDate(data.week_start)} – {formatShortDate(data.week_end)}
           </p>
           <div className="flex gap-2">
             {data.week_no !== data.current_week && (
               <button className="btn-ghost" onClick={() => setWeekNo(undefined)}>
-                Current week
+                <span className="hidden sm:inline">Current week</span>
+                <span className="sm:hidden">Today</span>
               </button>
             )}
             <button
               className="btn-ghost"
               onClick={() => setWeekNo(Math.min(data.num_weeks, current + 1))}
               disabled={!canNext}
+              aria-label="Next week"
             >
-              Next <ChevronRight className="h-4 w-4" />
+              <span className="hidden sm:inline">Next</span>
+              <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Desktop: table */}
+        <div className="hidden overflow-x-auto sm:block">
           <table className="w-full min-w-[640px]">
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -163,6 +204,13 @@ export function TrackingPage() {
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile: stacked day cards */}
+        <div className="divide-y divide-slate-100 sm:hidden">
+          {data.days.map((day) => (
+            <DayCard key={day.date} day={day} />
+          ))}
         </div>
       </div>
     </div>

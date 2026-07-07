@@ -1,13 +1,18 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { LogOut } from "lucide-react";
 import { settingsApi } from "../api/endpoints";
 import { apiErrorMessage } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import { Banner, Field, PageLoader, Spinner } from "../components/ui";
 import { InfoTip } from "../components/InfoTip";
 import { titleCase } from "../lib/format";
 
 export function SettingsPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const { logout } = useAuth();
   const { data: settings, isLoading } = useQuery({
     queryKey: ["settings"],
     queryFn: settingsApi.get,
@@ -81,6 +86,20 @@ export function SettingsPage() {
             {mutation.isPending && <Spinner />} Save settings
           </button>
         </div>
+      </div>
+
+      <div className="card p-6">
+        <h2 className="mb-1 text-lg font-semibold text-slate-800">Account</h2>
+        <p className="mb-4 text-sm text-slate-500">Sign out of this device.</p>
+        <button
+          className="btn-secondary w-full text-red-600 hover:bg-red-50 sm:w-auto"
+          onClick={() => {
+            logout();
+            navigate("/login");
+          }}
+        >
+          <LogOut className="h-4 w-4" /> Log out
+        </button>
       </div>
     </div>
   );
