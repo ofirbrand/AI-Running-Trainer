@@ -22,6 +22,7 @@ import {
 import { Badge, Banner, PageLoader, Spinner } from "../components/ui";
 import {
   formatDate,
+  formatDateTime,
   formatDistance,
   formatDuration,
   formatPace,
@@ -266,7 +267,9 @@ export function MyBoard() {
           <h1 className="text-2xl font-bold text-slate-900">My Board</h1>
           <p className="text-sm text-slate-500">
             Connected as {status?.garmin_email}
-            {status?.last_sync_at ? ` · last sync ${formatDate(status.last_sync_at)}` : ""}
+            {status?.last_sync_at
+              ? ` · last sync ${formatDateTime(status.last_sync_at, "Asia/Jerusalem")}`
+              : ""}
           </p>
         </div>
         <button className="btn-secondary" onClick={() => void syncNow()} disabled={syncing}>
