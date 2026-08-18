@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..models import (
     Activity,
+    DailyHealth,
     MetricObservation,
     PlannedWorkout,
     PlanVersion,
@@ -101,6 +102,55 @@ def gather_activities_in_range(
         .limit(limit)
     )
     return [_activity_to_dict(a) for a in rows]
+
+
+def gather_daily_health_in_range(
+    db: Session, user: User, start: date, end: date, day_cap: int = 60
+) -> dict[str, Any]:
+    """Read-only daily-health rollup for [start, end]: per-day rows (capped, most
+    recent first) plus None-safe averages over the whole range."""
+    rows = list(
+        db.scalars(
+            select(DailyHealth)
+            .where(
+                DailyHealth.user_id == user.id,
+                DailyHealth.date >= start,
+                DailyHealth.date <= end,
+            )
+            .order_by(DailyHealth.date.desc())
+        )
+    )
+
+    def _mean(values: list[float | int | None]) -> float | None:
+        present = [v for v in values if v is not None]
+        return round(sum(present) / len(present), 1) if present else None
+
+    days = [
+        {
+            "date": r.date.isoformat(),
+            "steps": r.steps,
+            "resting_hr": r.resting_hr,
+            "sleep_hours": round(r.sleep_seconds / 3600.0, 1) if r.sleep_seconds else None,
+            "sleep_score": r.sleep_score,
+            "avg_stress": r.avg_stress,
+            "body_battery_high": r.body_battery_high,
+            "body_battery_low": r.body_battery_low,
+        }
+        for r in rows[:day_cap]
+    ]
+    return {
+        "days_with_data": len(rows),
+        "averages": {
+            "resting_hr": _mean([r.resting_hr for r in rows]),
+            "sleep_hours": _mean(
+                [r.sleep_seconds / 3600.0 for r in rows if r.sleep_seconds]
+            ),
+            "sleep_score": _mean([r.sleep_score for r in rows]),
+            "avg_stress": _mean([r.avg_stress for r in rows]),
+            "steps": _mean([r.steps for r in rows]),
+        },
+        "recent_days": days,
+    }
 
 
 def compute_calendar(target_date: date, today: date | None = None) -> tuple[date, int]:

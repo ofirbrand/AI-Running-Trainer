@@ -45,7 +45,7 @@ export function SettingsPage() {
   if (isLoading) return <PageLoader />;
 
   const models = options?.models ?? [model];
-  const efforts = options?.reasoning_efforts ?? ["minimal", "low", "medium", "high"];
+  const efforts = options?.reasoning_efforts ?? ["low", "medium", "high", "max"];
 
   return (
     <div className="mx-auto max-w-xl space-y-6">

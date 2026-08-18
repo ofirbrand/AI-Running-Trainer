@@ -42,9 +42,9 @@ SUBMIT_PLAN_TOOL = {
 # Model families that use adaptive thinking (budget_tokens is rejected there).
 # The newer families default thinking display to "omitted", so we opt into
 # "summarized" to keep streaming the thinking deltas the UI renders.
-_ADAPTIVE_DISPLAY_FAMILIES = ("opus-4-7", "opus-4-8", "sonnet-5", "fable", "mythos")
-_ADAPTIVE_FAMILIES = ("opus-4-6", "sonnet-4-6")
-_EFFORT_MAP = {"minimal": "low", "low": "low", "medium": "medium", "high": "high"}
+_ADAPTIVE_DISPLAY_FAMILIES = ("opus-5", "opus-4-8", "sonnet-5", "fable-5")
+_ADAPTIVE_FAMILIES = ("opus-5", "sonnet-5", "fable-5")
+_EFFORT_MAP = {"minimal": "low", "low": "low", "medium": "medium", "high": "high", "max": "max"}
 
 
 def is_available() -> bool:

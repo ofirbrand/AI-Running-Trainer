@@ -15,6 +15,7 @@ import type {
   SyncResult,
   TrackingWeek,
   WeeklyUpdateResult,
+  WorkoutGarminData,
 } from "./types";
 
 // --- Auth ---
@@ -108,6 +109,16 @@ export const plansApi = {
       .get<TrackingWeek>(`/plans/${planId}/tracking`, {
         params: weekNo ? { week_no: weekNo } : {},
       })
+      .then((r) => r.data),
+};
+
+// --- Ad-hoc workout planner ---
+export const workoutPlannerApi = {
+  /** Fresh-syncs Garmin activities for the range and reports available data.
+   * Generation itself streams via `useAIProcessing().run("/workout-planner/generate", body)`. */
+  loadGarminData: (start: string, end: string) =>
+    api
+      .post<WorkoutGarminData>("/workout-planner/garmin-data", { start, end })
       .then((r) => r.data),
 };
 

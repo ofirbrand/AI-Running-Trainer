@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDistance, formatDuration, formatPace, titleCase } from "./format";
+import { formatDateTime, formatDistance, formatDuration, formatPace, titleCase } from "./format";
 
 describe("format helpers", () => {
   it("formats distance in km", () => {
@@ -17,6 +17,12 @@ describe("format helpers", () => {
   it("formats pace per km", () => {
     expect(formatPace(300)).toBe("5:00 /km");
     expect(formatPace(330)).toBe("5:30 /km");
+  });
+
+  it("formats date and time in the requested timezone", () => {
+    expect(formatDateTime("2026-08-18T12:30:00Z", "Asia/Jerusalem")).toBe(
+      "Aug 18, 2026, 03:30 PM",
+    );
   });
 
   it("title-cases snake_case", () => {

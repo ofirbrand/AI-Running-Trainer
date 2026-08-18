@@ -32,6 +32,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from .config import get_settings
 from .db import Base
 
 
@@ -106,8 +107,12 @@ class UserSettings(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True)
-    ai_model: Mapped[str] = mapped_column(String(128), default="claude-sonnet-4-5")
-    reasoning_effort: Mapped[str] = mapped_column(String(32), default="medium")
+    ai_model: Mapped[str] = mapped_column(
+        String(128), default=lambda: get_settings().default_ai_model
+    )
+    reasoning_effort: Mapped[str] = mapped_column(
+        String(32), default=lambda: get_settings().default_reasoning_effort
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, onupdate=_utcnow
     )

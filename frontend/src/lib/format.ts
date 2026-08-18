@@ -35,7 +35,7 @@ export function formatShortDate(iso?: string | null): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-export function formatDateTime(iso?: string | null): string {
+export function formatDateTime(iso?: string | null, timeZone?: string): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -45,6 +45,7 @@ export function formatDateTime(iso?: string | null): string {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone,
   });
 }
 
@@ -58,6 +59,24 @@ export function relativeDay(iso?: string | null): string {
   if (days === -1) return "yesterday";
   if (days < 0) return `${-days} days ago`;
   return `in ${days} days`;
+}
+
+function localIso(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/** Today's date in the user's LOCAL timezone as YYYY-MM-DD. */
+export function todayIso(): string {
+  return localIso(new Date());
+}
+
+/** The local date `days` days ago as YYYY-MM-DD. */
+export function isoDaysAgo(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return localIso(d);
 }
 
 export function titleCase(value?: string | null): string {

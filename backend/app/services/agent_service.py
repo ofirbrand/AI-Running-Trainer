@@ -22,7 +22,8 @@ from ..agent import prompts
 logger = logging.getLogger("coach.agent")
 settings = get_settings()
 
-REASONING_BUDGET = {"minimal": 0, "low": 2000, "medium": 6000, "high": 12000}
+# "minimal" is kept for legacy stored settings rows; "max" stays < MAX_TOKENS.
+REASONING_BUDGET = {"minimal": 0, "low": 2000, "medium": 6000, "high": 12000, "max": 24000}
 
 SUBMIT_PLAN_DESCRIPTION = (
     "Submit the final structured training plan. Pass the entire plan as a single "
@@ -381,6 +382,14 @@ def manual_update_stream(
 ) -> AsyncIterator[dict[str, Any]]:
     system = f"{prompts.SYSTEM_PROMPT}\n\n{prompts.reasoning_line(effort)}"
     return _stream(system, prompts.build_manual_update_prompt(context), ai_model, effort)
+
+
+def plan_workout_stream(
+    context: dict[str, Any], ai_model: str, effort: str
+) -> AsyncIterator[dict[str, Any]]:
+    """Ad-hoc single workout / one-week block; the result is never persisted."""
+    system = f"{prompts.WORKOUT_SYSTEM_PROMPT}\n\n{prompts.reasoning_line(effort)}"
+    return _stream(system, prompts.build_workout_prompt(context), ai_model, effort)
 
 
 async def chat_reply(messages: list[dict[str, str]], context: dict[str, Any], ai_model: str) -> str:

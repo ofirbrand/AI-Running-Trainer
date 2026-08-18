@@ -9,16 +9,10 @@ from ..config import get_settings
 from ..db import get_db
 from ..models import User, UserSettings
 from ..schemas import SettingsIn, SettingsOut
+from ..services.ai_settings import AVAILABLE_MODELS, REASONING_EFFORTS
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 app_settings = get_settings()
-
-# Models offered in the UI. The user can also rely on whatever the API key allows.
-AVAILABLE_MODELS = [
-    "claude-opus-4-8",
-    "claude-sonnet-4-6"
-]
-REASONING_EFFORTS = ["low", "medium", "high", "max"]
 
 
 def _get_or_create(db: Session, user: User) -> UserSettings:

@@ -10,7 +10,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .db import init_db
-from .routers import auth, garmin, internal, plans, profile, settings as settings_router, tracking
+from .routers import (
+    auth,
+    garmin,
+    internal,
+    plans,
+    profile,
+    settings as settings_router,
+    tracking,
+    workout_planner,
+)
 from .services import scheduler
 
 logging.basicConfig(level=logging.INFO)
@@ -47,6 +56,7 @@ app.include_router(auth.router)
 app.include_router(profile.router)
 app.include_router(garmin.router)
 app.include_router(plans.router)
+app.include_router(workout_planner.router)
 app.include_router(tracking.router)
 app.include_router(settings_router.router)
 app.include_router(internal.router)

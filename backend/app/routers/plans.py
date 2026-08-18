@@ -35,7 +35,7 @@ from ..schemas import (
     ProfileOut,
     WeeklyUpdateResult,
 )
-from ..services import agent_service, garmin_service, matching, plan_builder
+from ..services import agent_service, ai_settings, garmin_service, matching, plan_builder
 
 router = APIRouter(prefix="/api/plans", tags=["plans"])
 
@@ -85,9 +85,7 @@ def _get_version(db: Session, plan: TrainingPlan, version_id: int) -> PlanVersio
 
 
 def _settings(user: User) -> tuple[str, str]:
-    if user.settings is not None:
-        return user.settings.ai_model, user.settings.reasoning_effort
-    return "claude-sonnet-4-5", "medium"
+    return ai_settings.resolve(user)
 
 
 def _require_agent() -> None:

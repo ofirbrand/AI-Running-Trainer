@@ -5,7 +5,7 @@ import { garminApi } from "../api/endpoints";
 import { apiErrorMessage } from "../api/client";
 import { Banner, Field, Spinner } from "./ui";
 import { InfoTip } from "./InfoTip";
-import { formatDate } from "../lib/format";
+import { formatDateTime } from "../lib/format";
 
 export function GarminConnect({ onConnected }: { onConnected?: () => void }) {
   const qc = useQueryClient();
@@ -88,7 +88,10 @@ export function GarminConnect({ onConnected }: { onConnected?: () => void }) {
           <span className="font-medium">Connected as {status.garmin_email}</span>
         </div>
         <p className="text-sm text-slate-500">
-          Last sync: {status.last_sync_at ? formatDate(status.last_sync_at) : "never"}
+          Last sync:{" "}
+          {status.last_sync_at
+            ? formatDateTime(status.last_sync_at, "Asia/Jerusalem")
+            : "never"}
         </p>
         {status.last_sync_error && <Banner kind="warning">{status.last_sync_error}</Banner>}
         {success && <Banner kind="success">{success}</Banner>}

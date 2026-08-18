@@ -127,7 +127,25 @@ class MetricIn(BaseModel):
 
 class SettingsIn(BaseModel):
     ai_model: str
-    reasoning_effort: Literal["minimal", "low", "medium", "high"]
+    reasoning_effort: str
+
+    @field_validator("ai_model")
+    @classmethod
+    def model_known(cls, v: str) -> str:
+        from .services.ai_settings import AVAILABLE_MODELS
+
+        if v not in AVAILABLE_MODELS:
+            raise ValueError(f"ai_model must be one of {AVAILABLE_MODELS}")
+        return v
+
+    @field_validator("reasoning_effort")
+    @classmethod
+    def effort_known(cls, v: str) -> str:
+        from .services.ai_settings import REASONING_EFFORTS
+
+        if v not in REASONING_EFFORTS:
+            raise ValueError(f"reasoning_effort must be one of {REASONING_EFFORTS}")
+        return v
 
 
 class SettingsOut(BaseModel):
@@ -197,6 +215,87 @@ class PlanInputs(BaseModel):
                 raise ValueError(
                     "activity_history_start must be on or before activity_history_end"
                 )
+        return self
+
+
+# --------------------------------------------------------------------------- #
+# Ad-hoc workout planner (transient results — never persisted)
+# --------------------------------------------------------------------------- #
+
+
+class WorkoutGarminDataIn(BaseModel):
+    start: date
+    end: date
+
+    @model_validator(mode="after")
+    def check_range(self) -> "WorkoutGarminDataIn":
+        if self.end < self.start:
+            raise ValueError("end must be on or after start")
+        if self.start > date.today():
+            raise ValueError("start cannot be in the future")
+        if (self.end - self.start).days > 366:
+            raise ValueError("range too large (max 1 year)")
+        return self
+
+
+class WorkoutGarminDataOut(BaseModel):
+    activities_count: int = 0
+    health_days: int = 0
+    start: date
+    end: date
+
+
+class WorkoutPlanRequest(BaseModel):
+    """Survey answers + free text for the ad-hoc workout planner."""
+
+    mode: Literal["single", "week"]
+
+    # Single-workout branch
+    day_preference: Literal["today", "tomorrow", "ai_pick"] | None = None
+    duration: Literal["30", "45", "60", "90+"] | None = None
+    workout_type: Literal["easy", "intervals", "tempo", "long_run", "ai_decides"] | None = None
+
+    # Full-week branch
+    sessions_per_week: Literal["3", "4", "5", "6+"] | None = None
+    session_duration: Literal["30-45", "45-60", "60-90", "mixed"] | None = None
+    week_choice: Literal["this_week", "next_week"] | None = None
+
+    # Garmin history
+    use_garmin: bool = False
+    garmin_start: date | None = None
+    garmin_end: date | None = None
+
+    description: str = Field(min_length=1, max_length=4000)
+
+    # Session-only model/effort override (validated by ai_settings.resolve)
+    ai_model: str | None = None
+    reasoning_effort: str | None = None
+
+    # The client's local "today" — the server may run in UTC (clamped server-side).
+    client_today: date | None = None
+
+    @model_validator(mode="after")
+    def check_branches(self) -> "WorkoutPlanRequest":
+        if self.mode == "single" and not (
+            self.day_preference and self.duration and self.workout_type
+        ):
+            raise ValueError(
+                "single mode requires day_preference, duration, and workout_type"
+            )
+        if self.mode == "week" and not (
+            self.sessions_per_week and self.session_duration and self.week_choice
+        ):
+            raise ValueError(
+                "week mode requires sessions_per_week, session_duration, and week_choice"
+            )
+        if self.use_garmin and (self.garmin_start is None or self.garmin_end is None):
+            raise ValueError(
+                "garmin_start and garmin_end are required when use_garmin is true"
+            )
+        if self.garmin_start and self.garmin_end and self.garmin_start > self.garmin_end:
+            raise ValueError("garmin_start must be on or before garmin_end")
+        if not self.description.strip():
+            raise ValueError("description must not be empty")
         return self
 
 

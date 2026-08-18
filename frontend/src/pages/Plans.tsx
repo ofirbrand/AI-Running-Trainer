@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarDays, ChevronRight, Plus, Target, Trophy } from "lucide-react";
+import { CalendarDays, ChevronRight, Plus, Sparkles, Target, Trophy } from "lucide-react";
 import { garminApi, plansApi } from "../api/endpoints";
+import { PlanWorkoutPopup } from "../components/PlanWorkoutPopup";
 import { Badge, Banner, PageLoader } from "../components/ui";
 import { formatDate, relativeDay } from "../lib/format";
 import type { PlanSummary } from "../api/types";
@@ -46,20 +48,28 @@ function PlanCard({ plan }: { plan: PlanSummary }) {
 
 export function Plans() {
   const navigate = useNavigate();
+  const [planWorkoutOpen, setPlanWorkoutOpen] = useState(false);
   const { data: plans, isLoading } = useQuery({ queryKey: ["plans"], queryFn: plansApi.list });
   const { data: garmin } = useQuery({ queryKey: ["garmin-status"], queryFn: garminApi.status });
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Plans</h1>
           <p className="text-sm text-slate-500">Build, track, and refine your running plans.</p>
         </div>
-        <button className="btn-primary" onClick={() => navigate("/plans/new")}>
-          <Plus className="h-4 w-4" /> Add training plan
-        </button>
+        <div className="flex items-center gap-2">
+          <button className="btn-secondary" onClick={() => setPlanWorkoutOpen(true)}>
+            <Sparkles className="h-4 w-4" /> Plan workout
+          </button>
+          <button className="btn-primary" onClick={() => navigate("/plans/new")}>
+            <Plus className="h-4 w-4" /> Add training plan
+          </button>
+        </div>
       </div>
+
+      <PlanWorkoutPopup open={planWorkoutOpen} onOpenChange={setPlanWorkoutOpen} />
 
       {garmin && !garmin.connected && (
         <Banner kind="warning">

@@ -213,12 +213,41 @@ export interface WeeklyUpdateResult {
   message?: string | null;
 }
 
+// --- Ad-hoc workout planner (transient results — never persisted) ---
+
+export interface WorkoutGarminData {
+  activities_count: number;
+  health_days: number;
+  start: string;
+  end: string;
+}
+
+export interface WorkoutPlanRequest {
+  mode: "single" | "week";
+  day_preference?: "today" | "tomorrow" | "ai_pick" | null;
+  duration?: "30" | "45" | "60" | "90+" | null;
+  workout_type?: "easy" | "intervals" | "tempo" | "long_run" | "ai_decides" | null;
+  sessions_per_week?: "3" | "4" | "5" | "6+" | null;
+  session_duration?: "30-45" | "45-60" | "60-90" | "mixed" | null;
+  week_choice?: "this_week" | "next_week" | null;
+  use_garmin: boolean;
+  garmin_start?: string | null;
+  garmin_end?: string | null;
+  description: string;
+  ai_model?: string | null;
+  reasoning_effort?: string | null;
+  client_today?: string;
+}
+
 // --- Live AI processing stream ---
 
 export interface DoneEvent {
   type: "done";
-  plan_id: number;
+  /** Absent on transient runs (ad-hoc workout planner) — nothing is persisted. */
+  plan_id?: number;
   version_id?: number;
+  /** Transient ad-hoc workout plan, shaped like a PlanVersion for display. */
+  workout_plan?: { version: PlanVersion };
   update_recommended?: boolean;
   proposed_version_id?: number | null;
   change_summary?: string | null;

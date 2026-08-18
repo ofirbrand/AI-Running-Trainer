@@ -59,11 +59,11 @@ def test_settings_roundtrip(client):
     resp = client.put(
         "/api/settings",
         headers=headers,
-        json={"ai_model": "claude-opus-4-5", "reasoning_effort": "high"},
+        json={"ai_model": "claude-opus-4-8", "reasoning_effort": "high"},
     )
     assert resp.status_code == 200
     got = client.get("/api/settings", headers=headers)
-    assert got.json()["ai_model"] == "claude-opus-4-5"
+    assert got.json()["ai_model"] == "claude-opus-4-8"
     assert got.json()["reasoning_effort"] == "high"
 
 

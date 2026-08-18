@@ -9,21 +9,11 @@ import { Banner, Field, PageLoader, Spinner } from "../components/ui";
 import { AIProcessingModal, useAIProcessing } from "../components/AIProcessingStream";
 import { InfoTip } from "../components/InfoTip";
 import { EMPTY_PROFILE, ProfileForm } from "../components/ProfileForm";
-import { formatDate } from "../lib/format";
+import { formatDate, isoDaysAgo, todayIso } from "../lib/format";
 import type { PlanInputs, Profile } from "../api/types";
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DISTANCES = ["5K", "10K", "Half Marathon", "Marathon", "Other"];
-
-function isoDaysAgo(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
-}
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 const EMPTY_INPUTS: PlanInputs = {
   title: "",

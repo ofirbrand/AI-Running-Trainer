@@ -180,6 +180,19 @@ def test_thinking_kwargs_budget_models():
     assert agent_api._thinking_kwargs("claude-sonnet-4-5", "minimal") == {}
 
 
+def test_thinking_kwargs_max_effort():
+    kwargs = agent_api._thinking_kwargs("claude-opus-4-8", "max")
+    assert kwargs["output_config"] == {"effort": "max"}
+
+    kwargs = agent_api._thinking_kwargs("claude-sonnet-4-6", "max")
+    assert kwargs["output_config"] == {"effort": "max"}
+
+    # Legacy budget-token models get a real budget for "max" (< MAX_TOKENS).
+    kwargs = agent_api._thinking_kwargs("claude-sonnet-4-5", "max")
+    assert kwargs == {"thinking": {"type": "enabled", "budget_tokens": 24000}}
+    assert agent_service.REASONING_BUDGET["max"] < agent_api.MAX_TOKENS
+
+
 # --------------------------------------------------------------------------- #
 # Dispatcher routing (AI_BACKEND=api)
 # --------------------------------------------------------------------------- #

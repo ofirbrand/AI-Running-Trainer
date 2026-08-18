@@ -40,9 +40,10 @@ class Settings(BaseSettings):
     enable_scheduler: bool = True
     allow_registration: bool = True
 
-    # AI defaults
-    default_ai_model: str = "claude-opus-4-8"
-    default_reasoning_effort: str = "high"
+    # AI defaults — the single source of truth (env-overridable). The UserSettings
+    # column defaults and the plans router both resolve through these.
+    default_ai_model: str = "claude-sonnet-5"
+    default_reasoning_effort: str = "medium"
 
     # Sync
     daily_sync_hour: int = 5
